@@ -8,6 +8,7 @@ import type { PitchData } from './utils/PitchDetector';
 
 function App() {
   const [notes, setNotes] = useState<string[]>(['B2', 'C3', 'D3', 'E3', 'F3', 'G3', 'A3', 'B3']);
+  const [noteDurations, setNoteDurations] = useState<number[]>([2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000]);
   const [currentNote, setCurrentNote] = useState<string | null>(null);
   const [currentNoteIndex, setCurrentNoteIndex] = useState<number>(0);
   const [currentFrequency, setCurrentFrequency] = useState<number>(0);
@@ -27,8 +28,9 @@ function App() {
     };
   }, []);
 
-  const handleNotesChange = (newNotes: string[]) => {
+  const handleNotesChange = (newNotes: string[], durations: number[]) => {
     setNotes(newNotes);
+    setNoteDurations(durations);
     if (currentNoteIndex >= newNotes.length) {
       setCurrentNoteIndex(0);
     }
@@ -163,6 +165,7 @@ function App() {
         <main className="main-content">
           <WaveformCanvas
             notes={notes}
+            noteDurations={noteDurations}
             buffer={waveformBuffer}
             currentFrequency={currentFrequency}
             targetNotes={notes}

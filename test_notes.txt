@@ -1,0 +1,16 @@
+Test examples for note:time syntax:
+
+1. Default (2 seconds each):
+   C4, D4, E4, F4
+
+2. Mixed durations:
+   C4:1000, D4:1500, E4:2000, F4:500
+
+3. Quick sequence:
+   C4:300, D4:300, E4:300, F4:300, G4:300
+
+4. Long notes:
+   C4:5000, E4:3000, G4:4000
+
+5. Complex pattern:
+   C3:1000, E3:1500, G3:1000, C4:2000, G3:500, E3:500, C3:1000

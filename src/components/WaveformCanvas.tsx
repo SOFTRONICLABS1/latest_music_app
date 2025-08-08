@@ -3,6 +3,7 @@ import { NOTE_FREQUENCIES } from '../constants/notes';
 
 interface WaveformCanvasProps {
   notes: string[];
+  noteDurations: number[];
   buffer: Float32Array | null;
   currentFrequency: number;
   targetNotes: string[];
@@ -22,6 +23,7 @@ interface WavePoint {
 
 export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({ 
   notes, 
+  noteDurations,
   buffer, 
   currentFrequency, 
   targetNotes,
@@ -99,14 +101,17 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
     return canvasHeight - (normalized * canvasHeight * 0.9 + canvasHeight * 0.05);
   };
 
-  // Get color based on frequency match
+  // Get color based on frequency match using cents (musical intervals)
   const getFrequencyColor = (userFreq: number, targetFreq: number | null): string => {
     if (!targetFreq || !userFreq) return '#ef4444'; // red
     
-    const difference = Math.abs(userFreq - targetFreq);
-    if (difference <= 3) return '#22c55e'; // green - perfect match (within ±3 Hz)
-    if (difference <= 5) return '#f97316'; // orange - close match (within ±5 Hz)
-    return '#ef4444'; // red - poor match (more than ±5 Hz)
+    // Calculate cents difference (1200 cents = 1 octave)
+    const cents = Math.abs(1200 * Math.log2(userFreq / targetFreq));
+    
+    if (cents <= 10) return '#22c55e'; // green - perfect match (within ±10 cents)
+    if (cents <= 25) return '#f97316'; // orange - close match (within ±25 cents)
+    if (cents <= 50) return '#f59e0b'; // amber - ok match (within ±50 cents)
+    return '#ef4444'; // red - poor match (more than ±50 cents)
   };
 
 
@@ -175,14 +180,14 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
     ctx.lineTo(middleX, canvas.height);
     ctx.stroke();
     
-    // Draw 2 second cycle indicator
-    const cyclePixels = 2 * pixelsPerSecond; // 2 seconds in pixels
+    // Draw time indicator based on max note duration
+    const maxDuration = Math.max(...(noteDurations.length > 0 ? noteDurations : [2000])) / 1000; // Convert to seconds
     ctx.strokeStyle = '#6c757d';
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 2]);
     
     // Draw vertical lines every second from the middle line
-    for (let i = 1; i <= 2; i++) {
+    for (let i = 1; i <= Math.ceil(maxDuration); i++) {
       const x = middleX - (pixelsPerSecond * i);
       if (x > 0) {
         ctx.beginPath();
@@ -200,8 +205,13 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
     // Draw continuous waveform for all target notes as rectangular wave
     if (isPlaying && targetNotes.length > 0) {
-      const noteDuration = 2; // 2 seconds per note
-      const totalSequenceDuration = targetNotes.length * noteDuration; // Total duration of one sequence
+      // Calculate total sequence duration based on individual note durations
+      const totalSequenceDuration = noteDurations.reduce((sum, duration, index) => {
+        if (index < targetNotes.length) {
+          return sum + (duration / 1000); // Convert ms to seconds
+        }
+        return sum;
+      }, 0);
       const sequencePixels = totalSequenceDuration * pixelsPerSecond;
       
       // Calculate continuous scroll position
@@ -225,17 +235,20 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       
       for (let seq = startSeq; seq < endSeq; seq++) {
         // Calculate the base position for this sequence repetition
-        // Continuous infinite scrolling from right to left
-        const sequenceBaseX = canvas.width - (scrollPosition % sequencePixels) + ((seq - startSeq - 1) * sequencePixels);
+        // Start from the right side of canvas and scroll left
+        const sequenceBaseX = canvas.width - scrollPosition + (seq * sequencePixels);
         
         // Draw each note in the sequence
+        let cumulativeX = 0;
         for (let i = 0; i < targetNotes.length; i++) {
           const note = targetNotes[i];
           const frequency = NOTE_FREQUENCIES[note];
           if (!frequency) continue;
           
-          const noteStartX = sequenceBaseX + (i * noteDuration * pixelsPerSecond);
+          const noteDuration = (noteDurations[i] || 2000) / 1000; // Convert to seconds, default 2s
+          const noteStartX = sequenceBaseX + cumulativeX;
           const noteEndX = noteStartX + (noteDuration * pixelsPerSecond);
+          cumulativeX += noteDuration * pixelsPerSecond;
           
           // Check if this segment is visible (with buffer for smooth transitions)
           if (noteEndX < -100 || noteStartX > canvas.width + 100) continue;
@@ -320,16 +333,37 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       // Determine the current target frequency for color coding
       let currentTargetFrequency = null;
       if (isPlaying && targetNotes.length > 0) {
-        const noteDuration = 2; // 2 seconds per note
-        const totalSequenceDuration = targetNotes.length * noteDuration;
+        const totalSequenceDuration = noteDurations.reduce((sum, duration, index) => {
+          if (index < targetNotes.length) {
+            return sum + (duration / 1000);
+          }
+          return sum;
+        }, 0);
         const scrollPosition = elapsedTime * pixelsPerSecond;
         
-        // Only calculate target frequency if the wave has reached the middle
-        if (scrollPosition > (canvas.width / 2)) {
-          // Calculate which note is at the middle line
-          const adjustedPosition = scrollPosition - (canvas.width / 2);
+        // Calculate which note is at the middle line
+        // The wave starts from the right, so we need to calculate what's at the middle
+        // The middle line is at canvas.width / 2 distance from the start
+        const distanceToMiddle = (canvas.width / 2);
+        
+        // Only start checking when the wave has reached the middle
+        if (scrollPosition > distanceToMiddle) {
+          // Calculate which part of the sequence is at the middle
+          const adjustedPosition = scrollPosition - distanceToMiddle;
           const positionInSequence = adjustedPosition % (totalSequenceDuration * pixelsPerSecond);
-          const currentNoteIndex = Math.floor(positionInSequence / (noteDuration * pixelsPerSecond));
+          
+          // Find which note is at the current position
+          let cumulativeTime = 0;
+          let currentNoteIndex = -1;
+          for (let i = 0; i < targetNotes.length; i++) {
+            const noteDuration = (noteDurations[i] || 2000) / 1000;
+            if (positionInSequence >= cumulativeTime * pixelsPerSecond && 
+                positionInSequence < (cumulativeTime + noteDuration) * pixelsPerSecond) {
+              currentNoteIndex = i;
+              break;
+            }
+            cumulativeTime += noteDuration;
+          }
           
           if (currentNoteIndex >= 0 && currentNoteIndex < targetNotes.length) {
             const currentNote = targetNotes[currentNoteIndex];
@@ -409,14 +443,34 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         // Get current target frequency for difference calculation
         let currentTargetFrequency = null;
         if (isPlaying && targetNotes.length > 0) {
-          const noteDuration = 2;
-          const totalSequenceDuration = targetNotes.length * noteDuration;
+          const totalSequenceDuration = noteDurations.reduce((sum, duration, index) => {
+            if (index < targetNotes.length) {
+              return sum + (duration / 1000);
+            }
+            return sum;
+          }, 0);
           const scrollPosition = elapsedTime * pixelsPerSecond;
           
-          if (scrollPosition > (canvas.width / 2)) {
-            const adjustedPosition = scrollPosition - (canvas.width / 2);
+          // Calculate which note is at the middle line
+          const distanceToMiddle = (canvas.width / 2);
+          
+          // Only start checking when the wave has reached the middle
+          if (scrollPosition > distanceToMiddle) {
+            const adjustedPosition = scrollPosition - distanceToMiddle;
             const positionInSequence = adjustedPosition % (totalSequenceDuration * pixelsPerSecond);
-            const currentNoteIndex = Math.floor(positionInSequence / (noteDuration * pixelsPerSecond));
+            
+            // Find which note is at the current position
+            let cumulativeTime = 0;
+            let currentNoteIndex = -1;
+            for (let i = 0; i < targetNotes.length; i++) {
+              const noteDuration = (noteDurations[i] || 2000) / 1000;
+              if (positionInSequence >= cumulativeTime * pixelsPerSecond && 
+                  positionInSequence < (cumulativeTime + noteDuration) * pixelsPerSecond) {
+                currentNoteIndex = i;
+                break;
+              }
+              cumulativeTime += noteDuration;
+            }
             
             if (currentNoteIndex >= 0 && currentNoteIndex < targetNotes.length) {
               const currentNote = targetNotes[currentNoteIndex];
@@ -461,7 +515,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isPlaying, bpm, targetNotes, notes]);
+  }, [isPlaying, bpm, targetNotes, notes, noteDurations]);
 
   // Update frequency ref whenever it changes
   useEffect(() => {

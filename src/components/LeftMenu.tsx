@@ -2,40 +2,61 @@ import { useState, useEffect } from 'react';
 import { NOTE_FREQUENCIES } from '../constants/notes';
 
 interface LeftMenuProps {
-  onNotesChange: (notes: string[]) => void;
+  onNotesChange: (notes: string[], durations: number[]) => void;
 }
 
 export const LeftMenu: React.FC<LeftMenuProps> = ({ onNotesChange }) => {
   const defaultNotes = 'B2, C3, D3, E3, F3, G3, A3, B3';
   const [inputValue, setInputValue] = useState(defaultNotes);
   const [currentNotes, setCurrentNotes] = useState<string[]>(['B2', 'C3', 'D3', 'E3', 'F3', 'G3', 'A3', 'B3']);
+  const [currentDurations, setCurrentDurations] = useState<number[]>([2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000]);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
-    onNotesChange(currentNotes);
+    onNotesChange(currentNotes, currentDurations);
   }, []);
 
   const handleSetNotes = () => {
     setErrorMessage('');
     
-    // Parse comma-separated notes
+    // Parse comma-separated notes with optional duration (note:milliseconds)
     const notesArray = inputValue
       .split(',')
-      .map(note => note.trim().toUpperCase())
-      .filter(note => note.length > 0);
+      .map(item => item.trim())
+      .filter(item => item.length > 0);
     
     if (notesArray.length === 0) {
       setErrorMessage('Please enter at least one note');
       return;
     }
     
-    // Validate all notes
+    // Validate all notes and extract durations
     const invalidNotes: string[] = [];
     const validNotes: string[] = [];
+    const durations: number[] = [];
     
-    notesArray.forEach(note => {
+    notesArray.forEach(item => {
+      // Check if item contains duration (format: note:milliseconds)
+      const parts = item.split(':');
+      const note = parts[0].toUpperCase();
+      let duration = 2000; // Default 2 seconds
+      
+      if (parts.length === 2) {
+        const customDuration = parseInt(parts[1]);
+        if (!isNaN(customDuration) && customDuration > 0) {
+          duration = customDuration;
+        } else {
+          invalidNotes.push(item + ' (invalid duration)');
+          return;
+        }
+      } else if (parts.length > 2) {
+        invalidNotes.push(item + ' (invalid format)');
+        return;
+      }
+      
       if (NOTE_FREQUENCIES[note]) {
         validNotes.push(note);
+        durations.push(duration);
       } else {
         invalidNotes.push(note);
       }
@@ -46,9 +67,10 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({ onNotesChange }) => {
       return;
     }
     
-    // Set the valid notes
+    // Set the valid notes and durations
     setCurrentNotes(validNotes);
-    onNotesChange(validNotes);
+    setCurrentDurations(durations);
+    onNotesChange(validNotes, durations);
     setErrorMessage('Notes set successfully!');
     setTimeout(() => setErrorMessage(''), 2000);
   };
@@ -62,8 +84,10 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({ onNotesChange }) => {
   const handleReset = () => {
     setInputValue(defaultNotes);
     const defaultNotesArray = ['B2', 'C3', 'D3', 'E3', 'F3', 'G3', 'A3', 'B3'];
+    const defaultDurations = [2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000];
     setCurrentNotes(defaultNotesArray);
-    onNotesChange(defaultNotesArray);
+    setCurrentDurations(defaultDurations);
+    onNotesChange(defaultNotesArray, defaultDurations);
     setErrorMessage('Reset to default notes');
     setTimeout(() => setErrorMessage(''), 2000);
   };
@@ -74,14 +98,14 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({ onNotesChange }) => {
       
       <div className="note-input-section">
         <label htmlFor="notes-input" className="input-label">
-          Enter notes (comma-separated):
+          Enter notes (comma-separated, optional duration in ms - e.g., C4:1500):
         </label>
         <textarea
           id="notes-input"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder="e.g., C4, D4, E4, F4, G4"
+          placeholder="e.g., C4, D4:1500, E4, F4:3000, G4"
           className="notes-textarea"
           rows={3}
         />

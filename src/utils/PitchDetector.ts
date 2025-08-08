@@ -1,3 +1,5 @@
+import { NOTE_FREQUENCIES } from '../constants/notes';
+
 export class PitchDetector {
   private audioContext: AudioContext;
   private analyser: AnalyserNode | null = null;
@@ -13,17 +15,33 @@ export class PitchDetector {
     this.buffer = new Float32Array(this.bufferLength);
   }
 
-  noteFromPitch(frequency: number): number {
-    const noteNum = 12 * (Math.log(frequency / 440) / Math.log(2));
-    return Math.round(noteNum) + 69;
-  }
-
-  frequencyFromNoteNumber(note: number): number {
-    return 440 * Math.pow(2, (note - 69) / 12);
-  }
-
-  centsOffFromPitch(frequency: number, note: number): number {
-    return Math.floor(1200 * Math.log(frequency / this.frequencyFromNoteNumber(note)) / Math.log(2));
+  findClosestNote(frequency: number): { note: string, cents: number, noteFrequency: number } | null {
+    if (frequency <= 0) return null;
+    
+    let closestNote = '';
+    let closestFrequency = 0;
+    let minDifference = Infinity;
+    
+    // Find the closest note from NOTE_FREQUENCIES
+    for (const [note, noteFreq] of Object.entries(NOTE_FREQUENCIES)) {
+      const difference = Math.abs(frequency - noteFreq);
+      if (difference < minDifference) {
+        minDifference = difference;
+        closestNote = note;
+        closestFrequency = noteFreq;
+      }
+    }
+    
+    if (!closestNote) return null;
+    
+    // Calculate cents difference
+    const cents = Math.round(1200 * Math.log2(frequency / closestFrequency));
+    
+    return {
+      note: closestNote,
+      cents: cents,
+      noteFrequency: closestFrequency
+    };
   }
 
   private autoCorrelate(buf: Float32Array, sampleRate: number): number {
@@ -136,11 +154,12 @@ export class PitchDetector {
 
         if (frequency > 0) {
           console.log('Detected frequency:', frequency);
-          const noteNumber = this.noteFromPitch(frequency);
-          const noteStrings = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-          pitchData.note = noteNumber;
-          pitchData.noteString = noteStrings[noteNumber % 12];
-          pitchData.cents = this.centsOffFromPitch(frequency, noteNumber);
+          const closestNoteData = this.findClosestNote(frequency);
+          if (closestNoteData) {
+            pitchData.note = null; // We don't use note number anymore
+            pitchData.noteString = closestNoteData.note; // This is the full note name with octave
+            pitchData.cents = closestNoteData.cents;
+          }
         }
 
         callback(pitchData);
