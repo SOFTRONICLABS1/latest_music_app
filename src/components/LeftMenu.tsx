@@ -107,7 +107,7 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
   const handleReset = () => {
     setInputValue(defaultNotes);
     const defaultNotesArray = ["B2", "C3", "D3", "E3", "F3", "G3", "A3", "B3"];
-    const defaultDurations = [2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000];
+    const defaultDurations = [0, 0, 0, 0, 0, 0, 0, 0]; // 0 means use BPM
     setCurrentNotes(defaultNotesArray);
     setCurrentDurations(defaultDurations);
     onNotesChange(defaultNotesArray, defaultDurations, true); // Pass true to indicate reset

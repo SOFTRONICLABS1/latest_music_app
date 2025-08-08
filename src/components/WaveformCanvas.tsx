@@ -228,7 +228,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       // Calculate total sequence duration
       // Use individual note durations if provided, otherwise use BPM
       const totalSequenceDuration = targetNotes.reduce((sum, _, index) => {
-        const duration = (noteDurations[index] && noteDurations[index] > 0) 
+        const duration = (index < noteDurations.length && noteDurations[index] > 0) 
           ? noteDurations[index] / 1000  // Custom duration in seconds
           : secondsPerNote;              // BPM-based duration
         return sum + duration;
@@ -250,15 +250,15 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       const sequencesNeeded = Math.ceil(visibleWidth / sequencePixels) + 3;
 
       // Draw continuous sequences with stable rendering
-      // Start from before the visible area to ensure smooth entry
-      const startSeq = Math.floor(scrollPosition / sequencePixels) - 1;
-      const endSeq = startSeq + sequencesNeeded;
+      // Calculate sequences needed to fill the entire canvas from right to left
+      const sequencesNeededForFullCanvas = Math.ceil((canvas.width + scrollPosition) / sequencePixels) + 2;
+      const startSeq = -1; // Start before the visible area
+      const endSeq = startSeq + sequencesNeededForFullCanvas;
 
       for (let seq = startSeq; seq < endSeq; seq++) {
         // Calculate the base position for this sequence repetition
-        // Start from the right side of canvas and scroll left
-        const sequenceBaseX =
-          canvas.width - scrollPosition + seq * sequencePixels;
+        // The first sequence (seq=0) should start at canvas.width when scrollPosition=0
+        const sequenceBaseX = canvas.width + (seq * sequencePixels) - scrollPosition;
 
         // Draw each note in the sequence
         let cumulativeX = 0;
@@ -268,13 +268,14 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
           if (!frequency) continue;
 
           // Use custom duration if provided (non-zero), otherwise use BPM-based duration
-          const noteDuration = (noteDurations[i] && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
+          const noteDuration = (i < noteDurations.length && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
           const noteStartX = sequenceBaseX + cumulativeX;
           const noteEndX = noteStartX + noteDuration * pixelsPerSecond;
           cumulativeX += noteDuration * pixelsPerSecond;
 
-          // Check if this segment is visible (with buffer for smooth transitions)
-          if (noteEndX < -100 || noteStartX > canvas.width + 100) continue;
+          // Skip only if completely off-screen to the right
+          // Allow segments to extend to the left edge
+          if (noteStartX > canvas.width + 100) continue;
 
           const centerY = getYPosition(frequency, canvas.height);
 
@@ -383,7 +384,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       let currentTargetFrequency = null;
       if (isPlaying && targetNotes.length > 0) {
         const totalSequenceDuration = targetNotes.reduce((sum, _, index) => {
-          const duration = (noteDurations[index] && noteDurations[index] > 0) 
+          const duration = (index < noteDurations.length && noteDurations[index] > 0) 
             ? noteDurations[index] / 1000  // Custom duration in seconds
             : secondsPerNote;              // BPM-based duration
           return sum + duration;
@@ -407,7 +408,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
           let currentNoteIndex = -1;
           for (let i = 0; i < targetNotes.length; i++) {
             // Use custom duration if provided (non-zero), otherwise use BPM-based duration
-          const noteDuration = (noteDurations[i] && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
+          const noteDuration = (i < noteDurations.length && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
             if (
               positionInSequence >= cumulativeTime * pixelsPerSecond &&
               positionInSequence <
@@ -535,7 +536,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
             let currentNoteIndex = -1;
             for (let i = 0; i < targetNotes.length; i++) {
               // Use custom duration if provided (non-zero), otherwise use BPM-based duration
-          const noteDuration = (noteDurations[i] && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
+          const noteDuration = (i < noteDurations.length && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
               if (
                 positionInSequence >= cumulativeTime * pixelsPerSecond &&
                 positionInSequence <
