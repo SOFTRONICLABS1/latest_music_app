@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { NOTE_FREQUENCIES } from '../constants/notes';
+import { GuitarHarmonics } from '../utils/GuitarHarmonics';
 
 interface WaveformCanvasProps {
   notes: string[];
@@ -11,6 +12,7 @@ interface WaveformCanvasProps {
   isPlaying: boolean;
   isListening: boolean;
   onNoteChange: (index: number) => void;
+  resetTrigger?: number;
 }
 
 interface WavePoint {
@@ -30,7 +32,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   bpm,
   isPlaying,
   isListening,
-  onNoteChange
+  onNoteChange,
+  resetTrigger
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | undefined>(undefined);
@@ -41,6 +44,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   const isListeningRef = useRef<boolean>(false);
   const currentTargetIndexRef = useRef<number>(0);
   const userFrequencyHistory = useRef<{ frequency: number; timestamp: number; color: string }[]>([]);
+  const guitarHarmonicsRef = useRef<GuitarHarmonics | null>(null);
+  const lastPlayedNoteRef = useRef<{ note: string; startTime: number } | null>(null);
 
   // Calculate pixels per second based on BPM
   const beatDuration = 60 / bpm; // seconds per beat
@@ -53,11 +58,14 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
     // Get all note names as an ordered array
     const allNoteKeys = Object.keys(NOTE_FREQUENCIES);
     
+    // Get unique notes from target (to handle duplicates)
+    const uniqueTargetNotes = [...new Set(targetNotes)];
+    
     // Find min and max notes from target
     let minIndex = allNoteKeys.length;
     let maxIndex = -1;
     
-    targetNotes.forEach(note => {
+    uniqueTargetNotes.forEach(note => {
       const index = allNoteKeys.indexOf(note);
       if (index !== -1) {
         minIndex = Math.min(minIndex, index);
@@ -65,7 +73,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       }
     });
     
-    if (minIndex === allNoteKeys.length || maxIndex === -1) return targetNotes;
+    if (minIndex === allNoteKeys.length || maxIndex === -1) return uniqueTargetNotes;
     
     // Expand range by up to 3 notes on each side
     const expandedMinIndex = Math.max(0, minIndex - 3);
@@ -229,14 +237,17 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       const sequencesNeeded = Math.ceil(visibleWidth / sequencePixels) + 3;
       
       // Draw continuous sequences with stable rendering
+      // Calculate offset to start wave at middle line immediately
+      const middleOffset = canvas.width / 2;
+      
       // Start from before the visible area to ensure smooth entry
-      const startSeq = Math.floor(scrollPosition / sequencePixels) - 1;
+      const startSeq = Math.floor((scrollPosition - middleOffset) / sequencePixels) - 1;
       const endSeq = startSeq + sequencesNeeded;
       
       for (let seq = startSeq; seq < endSeq; seq++) {
         // Calculate the base position for this sequence repetition
-        // Start from the right side of canvas and scroll left
-        const sequenceBaseX = canvas.width - scrollPosition + (seq * sequencePixels);
+        // Start from the middle and scroll left
+        const sequenceBaseX = middleX - scrollPosition + (seq * sequencePixels);
         
         // Draw each note in the sequence
         let cumulativeX = 0;
@@ -263,10 +274,23 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
           if (noteStartX <= middleX && noteEndX >= middleX) {
             const progress = (middleX - noteStartX) / (noteDuration * pixelsPerSecond);
             
-            // Trigger note change only at the beginning
+            // Trigger note change and play harmonic only at the beginning
             if (progress < 0.05) {
               const actualIndex = i % targetNotes.length;
+              const uniqueNoteId = `${seq}-${i}-${note}`;
               onNoteChange(actualIndex);
+              
+              // Play guitar harmonic for this note
+              if (guitarHarmonicsRef.current) {
+                const currentTime = Date.now();
+                // Check if we haven't played this specific note instance recently
+                if (!lastPlayedNoteRef.current || 
+                    lastPlayedNoteRef.current.note !== uniqueNoteId || 
+                    currentTime - lastPlayedNoteRef.current.startTime > 100) {
+                  guitarHarmonicsRef.current.playNote(note, noteDurations[actualIndex] || 2000);
+                  lastPlayedNoteRef.current = { note: uniqueNoteId, startTime: currentTime };
+                }
+              }
             }
             
             // Draw pulse effect for the entire duration the note is at the middle line
@@ -496,11 +520,31 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
   useEffect(() => {
     if (isPlaying) {
-      startTimeRef.current = Date.now();
-      animate();
+      // Initialize guitar harmonics if not already created
+      if (!guitarHarmonicsRef.current) {
+        guitarHarmonicsRef.current = new GuitarHarmonics();
+      }
+      // Resume audio context if needed
+      guitarHarmonicsRef.current.resume();
+      
+      // Only reset start time if it's not already set (preserve continuity)
+      if (!startTimeRef.current) {
+        startTimeRef.current = Date.now();
+      }
+      lastPlayedNoteRef.current = null;
+      
+      // Start animation if not already running
+      if (!animationRef.current) {
+        animate();
+      }
     } else {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
+        animationRef.current = undefined;
+      }
+      // Stop all harmonics when playback stops
+      if (guitarHarmonicsRef.current) {
+        guitarHarmonicsRef.current.stopAll();
       }
       // Reset when stopped
       targetWaveRef.current = [];
@@ -508,14 +552,16 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       userFrequencyHistory.current = [];
       startTimeRef.current = 0;
       currentTargetIndexRef.current = 0;
+      lastPlayedNoteRef.current = null;
     }
 
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
+        animationRef.current = undefined;
       }
     };
-  }, [isPlaying, bpm, targetNotes, notes, noteDurations]);
+  }, [isPlaying]);
 
   // Update frequency ref whenever it changes
   useEffect(() => {
@@ -548,6 +594,37 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       window.removeEventListener('resize', handleResize);
     };
   }, []);
+  
+  // Cleanup guitar harmonics on unmount
+  useEffect(() => {
+    return () => {
+      if (guitarHarmonicsRef.current) {
+        guitarHarmonicsRef.current.stopAll();
+      }
+    };
+  }, []);
+  
+  // Handle reset trigger
+  useEffect(() => {
+    if (resetTrigger && resetTrigger > 0) {
+      // Clear all history and reset state
+      userFrequencyHistory.current = [];
+      targetWaveRef.current = [];
+      userWaveRef.current = [];
+      startTimeRef.current = 0;
+      currentTargetIndexRef.current = 0;
+      lastPlayedNoteRef.current = null;
+      
+      // Clear the canvas
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+    }
+  }, [resetTrigger]);
   
   return (
     <canvas 

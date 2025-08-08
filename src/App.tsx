@@ -17,6 +17,7 @@ function App() {
   const [isListening, setIsListening] = useState(false);
   const [bpm, setBpm] = useState<number>(60);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [resetTrigger, setResetTrigger] = useState(0);
   const pitchDetectorRef = useRef<PitchDetector | null>(null);
 
   useEffect(() => {
@@ -28,11 +29,19 @@ function App() {
     };
   }, []);
 
-  const handleNotesChange = (newNotes: string[], durations: number[]) => {
+  const handleNotesChange = (newNotes: string[], durations: number[], isReset?: boolean) => {
     setNotes(newNotes);
     setNoteDurations(durations);
     if (currentNoteIndex >= newNotes.length) {
       setCurrentNoteIndex(0);
+    }
+    // Trigger canvas reset if this is from a reset action
+    if (isReset) {
+      setResetTrigger(prev => prev + 1);
+      // Also clear the current performance data
+      setCurrentFrequency(0);
+      setCurrentNote(null);
+      setCurrentCents(null);
     }
   };
 
@@ -126,16 +135,6 @@ function App() {
               currentNote={currentNote}
               currentCents={currentCents}
             />
-            {isListening && (
-              <div className="mic-status">
-                <span className="mic-indicator">🎤</span> Microphone Active
-                {currentFrequency > 0 && (
-                  <div className="debug-info">
-                    Detecting: {currentFrequency.toFixed(1)} Hz
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </aside>
         
@@ -150,6 +149,7 @@ function App() {
             isPlaying={isPlaying}
             isListening={isListening}
             onNoteChange={setCurrentNoteIndex}
+            resetTrigger={resetTrigger}
           />
         </main>
       </div>

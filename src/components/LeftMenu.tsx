@@ -3,7 +3,11 @@ import { NOTE_FREQUENCIES } from "../constants/notes";
 import { useIsMobileOrTablet } from "../hooks/useMediaQuery";
 
 interface LeftMenuProps {
-  onNotesChange: (notes: string[], durations: number[]) => void;
+  onNotesChange: (
+    notes: string[],
+    durations: number[],
+    isReset?: boolean
+  ) => void;
   isPlaying?: boolean;
 }
 
@@ -11,11 +15,11 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
   onNotesChange,
   isPlaying = false,
 }) => {
-  const defaultNotes = "B2, C3, D3, E3, F3, G3, A3, B3";
+  const defaultNotes = "C3,B2, D3, E3, F3, G3, A3, B3";
   const [inputValue, setInputValue] = useState(defaultNotes);
   const [currentNotes, setCurrentNotes] = useState<string[]>([
-    "B2",
     "C3",
+    "B2",
     "D3",
     "E3",
     "F3",
@@ -105,7 +109,7 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
     const defaultDurations = [2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000];
     setCurrentNotes(defaultNotesArray);
     setCurrentDurations(defaultDurations);
-    onNotesChange(defaultNotesArray, defaultDurations);
+    onNotesChange(defaultNotesArray, defaultDurations, true); // Pass true to indicate reset
     setErrorMessage("Reset to default notes");
     setTimeout(() => setErrorMessage(""), 2000);
   };
