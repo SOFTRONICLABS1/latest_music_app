@@ -140,7 +140,7 @@ function App() {
       
       <div className="app-content">
         <aside className="left-sidebar">
-          <LeftMenu onNotesChange={handleNotesChange} />
+          <LeftMenu onNotesChange={handleNotesChange} isPlaying={isPlaying} />
           
           <div className="frequency-section-sidebar">
             <FrequencyDisplay

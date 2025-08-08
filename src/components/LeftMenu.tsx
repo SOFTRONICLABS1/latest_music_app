@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 import { NOTE_FREQUENCIES } from '../constants/notes';
+import { useIsMobileOrTablet } from '../hooks/useMediaQuery';
 
 interface LeftMenuProps {
   onNotesChange: (notes: string[], durations: number[]) => void;
+  isPlaying?: boolean;
 }
 
-export const LeftMenu: React.FC<LeftMenuProps> = ({ onNotesChange }) => {
+export const LeftMenu: React.FC<LeftMenuProps> = ({ onNotesChange, isPlaying = false }) => {
   const defaultNotes = 'B2, C3, D3, E3, F3, G3, A3, B3';
   const [inputValue, setInputValue] = useState(defaultNotes);
   const [currentNotes, setCurrentNotes] = useState<string[]>(['B2', 'C3', 'D3', 'E3', 'F3', 'G3', 'A3', 'B3']);
   const [currentDurations, setCurrentDurations] = useState<number[]>([2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000]);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const isMobileOrTablet = useIsMobileOrTablet();
 
   useEffect(() => {
     onNotesChange(currentNotes, currentDurations);
@@ -75,8 +78,9 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({ onNotesChange }) => {
     setTimeout(() => setErrorMessage(''), 2000);
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
       handleSetNotes();
     }
   };
@@ -92,36 +96,42 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({ onNotesChange }) => {
     setTimeout(() => setErrorMessage(''), 2000);
   };
 
+  const shouldHideInput = isMobileOrTablet && isPlaying;
+
   return (
     <div className="left-menu">
-      <h2>Musical Notes</h2>
-      
-      <div className="note-input-section">
-        <label htmlFor="notes-input" className="input-label">
-          Enter notes (comma-separated, optional duration in ms - e.g., C4:1500):
-        </label>
-        <textarea
-          id="notes-input"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="e.g., C4, D4:1500, E4, F4:3000, G4"
-          className="notes-textarea"
-          rows={3}
-        />
+      <div className="left-menu-content">
+        <h2>Musical Notes</h2>
         
-        <div className="button-group">
-          <button onClick={handleSetNotes} className="set-notes-button">
-            Set Notes
-          </button>
-          <button onClick={handleReset} className="reset-button">
-            Reset to Default
-          </button>
-        </div>
-        
-        {errorMessage && (
-          <div className={`message ${errorMessage.includes('Invalid') ? 'error' : 'success'}`}>
-            {errorMessage}
+        {!shouldHideInput && (
+          <div className="note-input-section">
+            <label htmlFor="notes-input" className="input-label">
+              Enter notes (comma-separated, optional duration in ms - e.g., C4:1500):
+            </label>
+            <textarea
+              id="notes-input"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="e.g., C4, D4:1500, E4, F4:3000, G4"
+              className="notes-textarea"
+              rows={3}
+            />
+            
+            <div className="button-group">
+              <button onClick={handleSetNotes} className="set-notes-button">
+                Set Notes
+              </button>
+              <button onClick={handleReset} className="reset-button">
+                Reset to Default
+              </button>
+            </div>
+            
+            {errorMessage && (
+              <div className={`message ${errorMessage.includes('Invalid') ? 'error' : 'success'}`}>
+                {errorMessage}
+              </div>
+            )}
           </div>
         )}
       </div>

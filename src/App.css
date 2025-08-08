@@ -92,7 +92,7 @@ body {
 .app-content {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   overflow: hidden;
   position: relative;
 }
@@ -103,9 +103,21 @@ body {
   padding: 1rem;
   overflow-y: auto;
   box-shadow: 0 -2px 4px rgba(0,0,0,0.05);
-  max-height: 40vh;
+  min-height: fit-content;
+  max-height: 50vh;
   position: relative;
   z-index: 10;
+}
+
+.left-menu {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.left-menu-content {
+  flex: 1;
+  overflow-y: auto;
 }
 
 .left-menu h2 {
@@ -208,11 +220,11 @@ body {
   padding: 0;
   overflow: hidden;
   background-color: #f8f9fa;
-  min-height: 0;
+  min-height: 200px;
 }
 
 .frequency-section-sidebar {
-  margin-top: 1rem;
+  margin-top: auto;
   padding-top: 1rem;
   border-top: 1px solid #dee2e6;
 }
@@ -330,6 +342,13 @@ body {
   }
 }
 
+/* Hide note input section transition for mobile/tablet when playing */
+@media (max-width: 1024px) {
+  .note-input-section {
+    transition: opacity 0.3s ease, max-height 0.3s ease;
+  }
+}
+
 /* Tablet styles (641px to 1024px) */
 @media (min-width: 641px) {
   .app-header {
@@ -363,10 +382,13 @@ body {
 
   .left-sidebar {
     width: 320px;
-    max-height: none;
+    max-height: 100%;
+    min-height: 100%;
     height: 100%;
     box-shadow: 2px 0 4px rgba(0,0,0,0.05);
     padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
   }
 
   .left-menu h2 {
@@ -528,8 +550,14 @@ body {
     font-size: 1rem;
   }
 
+  .app-content {
+    flex-direction: row;
+  }
+
   .left-sidebar {
-    max-height: 35vh;
+    width: 45%;
+    max-height: 100%;
+    min-height: 100%;
   }
 
   .frequency-box {
