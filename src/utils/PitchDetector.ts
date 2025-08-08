@@ -114,16 +114,12 @@ export class PitchDetector {
         }
       });
 
-      console.log('Microphone stream obtained');
-
       this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 2048;
       this.analyser.smoothingTimeConstant = 0.8;
       this.mediaStreamSource.connect(this.analyser);
       this.isListening = true;
-
-      console.log('Audio analyser connected');
 
       const updatePitch = () => {
         if (!this.isListening || !this.analyser) return;
@@ -137,10 +133,6 @@ export class PitchDetector {
             maxVal = Math.abs(this.buffer[i]);
           }
         }
-        
-        if (maxVal > 0.01) {
-          console.log('Audio signal detected, max amplitude:', maxVal);
-        }
 
         const frequency = this.autoCorrelate(this.buffer, this.audioContext.sampleRate);
 
@@ -153,7 +145,6 @@ export class PitchDetector {
         };
 
         if (frequency > 0) {
-          console.log('Detected frequency:', frequency);
           const closestNoteData = this.findClosestNote(frequency);
           if (closestNoteData) {
             pitchData.note = null; // We don't use note number anymore
@@ -191,7 +182,6 @@ export class PitchDetector {
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;
     }
-    console.log('Stopped listening');
   }
 }
 
