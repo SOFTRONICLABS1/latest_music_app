@@ -658,5 +658,34 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (guitarHarmonicsRef.current) {
+        guitarHarmonicsRef.current.stopAll();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (resetTrigger && resetTrigger > 0) {
+      // Clear all history and reset state
+      userFrequencyHistory.current = [];
+      targetWaveRef.current = [];
+      userWaveRef.current = [];
+      startTimeRef.current = 0;
+      currentTargetIndexRef.current = 0;
+      lastPlayedNoteRef.current = null;
+
+      // Clear the canvas
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+    }
+  }, [resetTrigger]);
+
   return <canvas ref={canvasRef} className="waveform-canvas" />;
 };
