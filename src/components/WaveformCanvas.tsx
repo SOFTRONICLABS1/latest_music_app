@@ -51,9 +51,12 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
     null
   );
 
-  // Calculate pixels per second based on BPM
-  const beatDuration = 60 / bpm; // seconds per beat
-  const pixelsPerSecond = 100 / beatDuration; // 100 pixels per beat
+  // Calculate pixels per second based on BPM (notes per minute)
+  // BPM 120 = 120 notes/min = 2 notes/sec = 0.5 sec per note
+  // BPM 60 = 60 notes/min = 1 note/sec = 1 sec per note  
+  // BPM 40 = 40 notes/min = 0.667 notes/sec = 1.5 sec per note
+  const secondsPerNote = 60 / bpm; // Direct calculation: 60 seconds / BPM = seconds per note
+  const pixelsPerSecond = 100 / secondsPerNote; // 100 pixels per note duration
 
   // Function to get expanded notes range for display
   const getExpandedNotesRange = (targetNotes: string[]): string[] => {
@@ -222,16 +225,14 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
     // Draw continuous waveform for all target notes as rectangular wave
     if (isPlaying && targetNotes.length > 0) {
-      // Calculate total sequence duration based on individual note durations
-      const totalSequenceDuration = noteDurations.reduce(
-        (sum, duration, index) => {
-          if (index < targetNotes.length) {
-            return sum + duration / 1000; // Convert ms to seconds
-          }
-          return sum;
-        },
-        0
-      );
+      // Calculate total sequence duration
+      // Use individual note durations if provided, otherwise use BPM
+      const totalSequenceDuration = targetNotes.reduce((sum, _, index) => {
+        const duration = (noteDurations[index] && noteDurations[index] > 0) 
+          ? noteDurations[index] / 1000  // Custom duration in seconds
+          : secondsPerNote;              // BPM-based duration
+        return sum + duration;
+      }, 0);
       const sequencePixels = totalSequenceDuration * pixelsPerSecond;
 
       // Calculate continuous scroll position
@@ -266,7 +267,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
           const frequency = NOTE_FREQUENCIES[note];
           if (!frequency) continue;
 
-          const noteDuration = (noteDurations[i] || 2000) / 1000; // Convert to seconds, default 2s
+          // Use custom duration if provided (non-zero), otherwise use BPM-based duration
+          const noteDuration = (noteDurations[i] && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
           const noteStartX = sequenceBaseX + cumulativeX;
           const noteEndX = noteStartX + noteDuration * pixelsPerSecond;
           cumulativeX += noteDuration * pixelsPerSecond;
@@ -302,7 +304,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
                 ) {
                   guitarHarmonicsRef.current.playNote(
                     note,
-                    noteDurations[actualIndex] || 2000
+                    noteDurations[actualIndex] || (secondsPerNote * 1000) // Use custom duration or BPM
                   );
                   lastPlayedNoteRef.current = {
                     note: uniqueNoteId,
@@ -380,15 +382,12 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       // Determine the current target frequency for color coding
       let currentTargetFrequency = null;
       if (isPlaying && targetNotes.length > 0) {
-        const totalSequenceDuration = noteDurations.reduce(
-          (sum, duration, index) => {
-            if (index < targetNotes.length) {
-              return sum + duration / 1000;
-            }
-            return sum;
-          },
-          0
-        );
+        const totalSequenceDuration = targetNotes.reduce((sum, _, index) => {
+          const duration = (noteDurations[index] && noteDurations[index] > 0) 
+            ? noteDurations[index] / 1000  // Custom duration in seconds
+            : secondsPerNote;              // BPM-based duration
+          return sum + duration;
+        }, 0);
         const scrollPosition = elapsedTime * pixelsPerSecond;
 
         // Calculate which note is at the middle line
@@ -407,7 +406,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
           let cumulativeTime = 0;
           let currentNoteIndex = -1;
           for (let i = 0; i < targetNotes.length; i++) {
-            const noteDuration = (noteDurations[i] || 2000) / 1000;
+            // Use custom duration if provided (non-zero), otherwise use BPM-based duration
+          const noteDuration = (noteDurations[i] && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
             if (
               positionInSequence >= cumulativeTime * pixelsPerSecond &&
               positionInSequence <
@@ -534,7 +534,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
             let cumulativeTime = 0;
             let currentNoteIndex = -1;
             for (let i = 0; i < targetNotes.length; i++) {
-              const noteDuration = (noteDurations[i] || 2000) / 1000;
+              // Use custom duration if provided (non-zero), otherwise use BPM-based duration
+          const noteDuration = (noteDurations[i] && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
               if (
                 positionInSequence >= cumulativeTime * pixelsPerSecond &&
                 positionInSequence <

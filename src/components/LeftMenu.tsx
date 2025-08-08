@@ -28,7 +28,7 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
     "B3",
   ]);
   const [currentDurations, setCurrentDurations] = useState<number[]>([
-    2000, 2000, 2000, 2000, 2000, 2000, 2000, 2000,
+    0, 0, 0, 0, 0, 0, 0, 0, // 0 means use BPM
   ]);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const isMobileOrTablet = useIsMobileOrTablet();
@@ -60,12 +60,13 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
       // Check if item contains duration (format: note:milliseconds)
       const parts = item.split(":");
       const note = parts[0].toUpperCase();
-      let duration = 2000; // Default 2 seconds
+      let duration = 0; // 0 means "use BPM"
 
       if (parts.length === 2) {
+        // Parse as milliseconds
         const customDuration = parseInt(parts[1]);
         if (!isNaN(customDuration) && customDuration > 0) {
-          duration = customDuration;
+          duration = customDuration; // Keep as milliseconds
         } else {
           invalidNotes.push(item + " (invalid duration)");
           return;
