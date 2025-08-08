@@ -42,37 +42,14 @@ function App() {
       setCurrentNote(data.noteString);
       setCurrentCents(data.cents);
       setWaveformBuffer(data.buffer);
-    }
-  };
-
-  const toggleListening = async () => {
-    if (!pitchDetectorRef.current) return;
-
-    if (isListening) {
-      pitchDetectorRef.current.stopListening();
-      setIsListening(false);
-      setCurrentFrequency(0);
-      setCurrentNote(null);
-      setCurrentCents(null);
-      setWaveformBuffer(null);
     } else {
-      try {
-        await pitchDetectorRef.current.startListening(handlePitchData);
-        setIsListening(true);
-      } catch (error: any) {
-        console.error('Failed to start listening:', error);
-        let errorMessage = 'Failed to access microphone. ';
-        if (error.name === 'NotAllowedError') {
-          errorMessage += 'Please allow microphone access in your browser settings.';
-        } else if (error.name === 'NotFoundError') {
-          errorMessage += 'No microphone found. Please connect a microphone.';
-        } else {
-          errorMessage += 'Error: ' + error.message;
-        }
-        alert(errorMessage);
-      }
+      // When there's no voice input, only update the waveform buffer
+      // Keep the last detected note info for reference
+      setCurrentFrequency(0);
+      setWaveformBuffer(data.buffer);
     }
   };
+
 
   return (
     <div className="app">
