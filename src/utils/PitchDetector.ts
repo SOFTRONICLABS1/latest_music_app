@@ -108,9 +108,9 @@ export class PitchDetector {
 
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: false,
-          autoGainControl: false,
-          noiseSuppression: false
+          echoCancellation: true,
+          autoGainControl: true,
+          noiseSuppression: true
         }
       });
 
