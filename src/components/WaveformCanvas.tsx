@@ -98,7 +98,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   // Calculate Y position for a frequency using expanded range
   const getYPosition = (frequency: number, canvasHeight: number): number => {
     if (!frequency || displayNotes.length === 0) return canvasHeight / 2;
-
+      console.log(buffer)
     // Use display notes (expanded range) for Y position calculation
     const frequencies = displayNotes
       .map((n) => NOTE_FREQUENCIES[n])
