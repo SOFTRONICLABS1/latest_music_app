@@ -124,6 +124,6 @@ export const getAllNotes = (): string[] => {
 
 export const getNotesInRange = (minFreq: number, maxFreq: number): NoteData[] => {
   return Object.entries(NOTE_FREQUENCIES)
-    .filter(([note, freq]) => freq >= minFreq && freq <= maxFreq)
+    .filter(([, freq]) => freq >= minFreq && freq <= maxFreq)
     .map(([note, freq]) => ({ note, frequency: freq }));
 };

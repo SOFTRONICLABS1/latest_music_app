@@ -16,14 +16,10 @@ interface VocalGameCanvasProps {
 }
 
 export const VocalGameCanvas: React.FC<VocalGameCanvasProps> = ({ 
-  onClose, 
   onGameStateChange,
   notes = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'],
   noteDurations = [0, 0, 0, 0, 0, 0, 0, 0],
   bpm = 120,
-  currentFrequency = 0,
-  currentNote = null,
-  currentCents = null,
   targetNote = null
 }) => {
   const gameRef = useRef<any>(null);
