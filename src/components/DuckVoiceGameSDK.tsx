@@ -779,7 +779,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     const baseWidthMultiplier = 60 + (this.bpm * 0.5);
     const prevBarWidth = Math.max(prevDuration * baseWidthMultiplier, 60);
     const barTimeInSeconds = prevBarWidth / pixelsPerSecond;
-    const minGapPixels = 150;
+    const minGapPixels = 15;
     const minGapTime = minGapPixels / pixelsPerSecond;
     
     // Total time is previous duration + gap time
