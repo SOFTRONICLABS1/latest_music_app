@@ -108,7 +108,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       medium: { threshold: 0.85, scoreMultiplier: 1.5 },
       hard: { threshold: 0.90, scoreMultiplier: 2 }
     };
-
+    
     // Adjust ground level based on screen orientation
     const isLandscape = window.innerWidth > window.innerHeight;
     const isShortScreen = window.innerHeight <= 500;
@@ -116,12 +116,12 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     if (isLandscape && isShortScreen) {
       this.groundLevel = window.innerHeight * 0.85; // Higher ground level for landscape
     } else {
-    this.groundLevel = window.innerHeight * 0.75;
+      this.groundLevel = window.innerHeight * 0.75;
     }
     
     this.state = {
       gameState: 'idle',
-      runnerY: this.groundLevel - 45, // Adjusted for smaller bird (35px height + 10px margin)
+      runnerY: this.groundLevel - 60,
       runnerVelocity: 0,
       bars: [],
       score: 0,
@@ -157,7 +157,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     if (this.pitchDetector) {
       this.pitchDetector.stopListening();
     }
-        if (this.soundSynthesis) {
+    if (this.soundSynthesis) {
       this.soundSynthesis.destroy();
     }
     
@@ -165,7 +165,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     window.removeEventListener('resize', this.handleResize);
   }
 
-    handleResize = (): void => {
+  handleResize = (): void => {
     // Update ground level based on new screen dimensions
     const isLandscape = window.innerWidth > window.innerHeight;
     const isShortScreen = window.innerHeight <= 500;
@@ -179,7 +179,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       
       // Update runner position if needed
       this.setState(prevState => ({
-        runnerY: Math.min(prevState.runnerY, this.groundLevel - 45) // Adjusted for smaller bird
+        runnerY: Math.min(prevState.runnerY, this.groundLevel - 60)
       }));
       
       // Recalculate bar positions for new dimensions
@@ -210,7 +210,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       // Calculate spacing to prevent overlap based on bar width and movement
       // Ensure there's always clear space between notes
       const barTimeInSeconds = barWidth / pixelsPerSecond;
-      const minGapPixels = 5; // Reduced minimum gap in pixels between notes (was 10)
+      const minGapPixels = 10; // Minimum gap in pixels between notes
       const minGapTime = minGapPixels / pixelsPerSecond;
       
       // Use the note duration plus minimum gap time
@@ -432,7 +432,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       runnerXPercentage = 0.25; // 25% on tablet
     }
     
-    const runnerX = screenWidth * runnerXPercentage + 25; // Add half bird width
+    const runnerX = screenWidth * runnerXPercentage; // Use exact percentage position from CSS
     
     this.setState(prevState => {
       let scoreGained = 0;
@@ -450,20 +450,42 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
         const barTop = bar.y;
         const barBottom = bar.y + 20;
         
-        // Check both horizontal and vertical overlap
-        const horizontalOverlap = runnerX >= barLeft && runnerX <= barRight;
-        const verticalOverlap = runnerBottom >= barTop && runnerTop <= barBottom;
+        // More precise collision detection - bird must be properly inside the note
+        const birdWidth = 50; // Bird width
+        const birdHeight = 50; // Bird height
+        const birdLeft = runnerX - (birdWidth / 2);
+        const birdRight = runnerX + (birdWidth / 2);
+        const birdTop = runnerTop;
+        const birdBottom = runnerBottom;
         
-        if (horizontalOverlap && verticalOverlap) {
+        // Check for actual overlap (not just edge touching)
+        const horizontalOverlap = birdRight > barLeft && birdLeft < barRight;
+        const verticalOverlap = birdBottom > barTop && birdTop < barBottom;
+        
+        // Additional check: ensure significant overlap (at least 20 pixels in each direction)
+        const horizontalOverlapAmount = Math.min(birdRight, barRight) - Math.max(birdLeft, barLeft);
+        const verticalOverlapAmount = Math.min(birdBottom, barBottom) - Math.max(birdTop, barTop);
+        const significantOverlap = horizontalOverlapAmount >= 20 && verticalOverlapAmount >= 15;
+        
+        if (horizontalOverlap && verticalOverlap && significantOverlap) {
           // More forgiving frequency matching
           const frequencyTolerance = 80; // Fixed tolerance
-          const frequencyMatch = Math.abs(frequency - bar.frequency) < frequencyTolerance;
+          const frequencyDifference = Math.abs(frequency - bar.frequency);
+          const frequencyMatch = frequencyDifference < frequencyTolerance;
+          const closeMatch = frequencyDifference < (frequencyTolerance * 1.5); // Within 120Hz
           
-          if (frequencyMatch) {
+          // Only start progress if bird is touching AND singing the right frequency
+          if (frequencyMatch && prevState.voiceDetected && frequency > 20) {
             // Initialize contact tracking if not already started
             if (!bar.contactStartTime) {
               bar.contactStartTime = currentTime;
               bar.totalContactTime = 0;
+              
+              // Play harmonic feedback when user starts touching the note correctly
+              if (this.soundSynthesis && prevState.harmonicsEnabled) {
+                console.log('Playing contact tone for:', bar.frequency, 'Hz');
+                this.soundSynthesis.playTone(bar.frequency, 0.15, 'sine');
+              }
             }
             
             // Update contact time
@@ -476,10 +498,24 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
             // Award points if threshold is met and not already collected
             if (contactPercentage >= requiredThreshold && !bar.collected) {
               scoreGained += 10 * this.modeSettings[this.mode].scoreMultiplier;
+              
+              // Play success harmonic chord when note is completed
+              if (this.soundSynthesis && prevState.harmonicsEnabled) {
+                this.soundSynthesis.playChord(bar.frequency, 0.6);
+              }
+              
               return { ...bar, collected: true };
             }
             
             return bar; // Still in contact, continue tracking
+          } else if (closeMatch && prevState.voiceDetected && frequency > 20) {
+            // Close but not exact match - provide guidance tone (softer feedback)
+            if (this.soundSynthesis && prevState.harmonicsEnabled && !bar.contactStartTime) {
+              // Play a softer guidance tone to help user find the right pitch
+              this.soundSynthesis.playTone(bar.frequency, 0.1, 'triangle');
+            }
+            // Wrong frequency - reset contact time but keep some feedback
+            return { ...bar, contactStartTime: null, totalContactTime: 0 };
           } else {
             // Wrong frequency - reset contact time
             return { ...bar, contactStartTime: null, totalContactTime: 0 };
@@ -526,8 +562,8 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     });
   };
 
-  startGravity = () => {
-    this.gravityLoopId = setInterval(() => {
+  startGravity = (): void => {
+    this.gravityLoopId = window.setInterval(() => {
       this.setState(prevState => {
         // Only apply gravity when no voice is detected
         if (prevState.voiceDetected) {
@@ -594,37 +630,72 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     }, 30); // Faster update for smoother physics
   };
 
-  startGameLoop = () => {
+  startGameLoop = (): void => {
     const startTime = Date.now();
     
-    this.gameLoopId = setInterval(() => {
+    this.gameLoopId = window.setInterval(() => {
       const currentTime = Date.now() - startTime;
       
       this.setState(prevState => {
         // Calculate bird line position for harmonic detection
         const screenWidth = window.innerWidth;
-        let runnerXPercentage = 0.40; // 40% by default (moved right)
+        let runnerXPercentage = 0.30; // 30% by default
         
         if (screenWidth <= 480) {
-          runnerXPercentage = 0.30; // 30% on mobile (moved right)
+          runnerXPercentage = 0.20; // 20% on mobile
         } else if (screenWidth <= 768) {
-          runnerXPercentage = 0.35; // 35% on tablet (moved right)
+          runnerXPercentage = 0.25; // 25% on tablet
         }
         
-        // CSS left: 30% positions the LEFT EDGE of the bird element
-        // Use the same positioning as collision detection
-        const birdWidth = 35; // Bird width from CSS (reduced from 50)
-        const runnerLeftEdge = screenWidth * runnerXPercentage; // Left edge position from CSS
-        const birdLineX = runnerLeftEdge + (birdWidth / 2);
-        // Move bars
-        let updatedBars = prevState.bars.map(bar => ({
-          ...bar,
-          x: bar.x - 3
-        }));
+        const birdLineX = screenWidth * runnerXPercentage; // Bird center line matching CSS position
+        
+        // Move bars and detect harmonic triggers
+        // Calculate movement speed based on BPM
+        const moveSpeed = 2 + (this.bpm / 60); // Base speed + BPM factor
+        
+        let updatedBars = prevState.bars.map(bar => {
+          const newBar = {
+            ...bar,
+            x: bar.x - moveSpeed
+          };
+          
+          // Check if bar just crossed the bird line (harmonic trigger)
+          const barLeft = newBar.x;
+          const barRight = newBar.x + (newBar.width || 100);
+          const prevBarLeft = bar.x;
+          const prevBarRight = bar.x + (bar.width || 100);
+          
+          // Detect crossing: bar was to the right of line, now crosses or passes it
+          const wasPastLine = prevBarLeft > birdLineX;
+          const nowCrossesLine = barLeft <= birdLineX && barRight >= birdLineX;
+          const justPassedLine = prevBarRight > birdLineX && barRight < birdLineX;
+          
+          // When note reaches the bird line (like blue line in WaveformCanvas), it becomes "active"
+          if ((wasPastLine && (nowCrossesLine || justPassedLine)) && !newBar.hasPlayedHarmonic) {
+            // This note is now active at the bird line - play reference harmonic
+            console.log('Note reached bird line:', newBar.note, newBar.frequency, 'Hz');
+            console.log('SoundSynthesis exists:', !!this.soundSynthesis);
+            console.log('Game playing:', prevState.gameState === 'playing');
+            console.log('Harmonics enabled:', prevState.harmonicsEnabled);
+            
+            if (this.soundSynthesis && prevState.gameState === 'playing' && prevState.harmonicsEnabled) {
+              console.log('Playing harmonic chord for:', newBar.frequency, 'Hz');
+              this.soundSynthesis.playHarmonicChord(newBar.frequency, 0.8);
+            }
+            newBar.hasPlayedHarmonic = true;
+            
+            // Update current note index to track which note is at the bird line
+            // This makes the bird act like the blue line reference
+            if (newBar.originalIndex !== undefined && newBar.originalIndex !== prevState.currentNoteIndex) {
+              // Note: We'll update currentNoteIndex in the state update below
+            }
+          }
+          
+          return newBar;
+        });
         
         // More aggressive and comprehensive cleanup
-        const beforeCount = updatedBars.length;
-        const activeBarIds = new Set(); // Track unique bar IDs to prevent duplicates
+        const activeBarIds = new Set<string>(); // Track unique bar IDs to prevent duplicates
         
         updatedBars = updatedBars.filter(bar => {
           const barRight = bar.x + (bar.width || 100);
@@ -632,7 +703,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
           const barId = bar.uniqueId || bar.id;
           
           // Remove if:
-          // 1. Collected bars - immediate removal
+          // 1. Collected bars that have moved past the bird completely
           if (bar.collected && barRight < (birdLineX - 100)) {
             return false;
           }
@@ -662,15 +733,30 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
           return true;
         });
         
+        // Find the note currently at the bird line (like blue line in WaveformCanvas)
+        let currentNoteAtBirdLine = prevState.currentNoteIndex;
+        
+        // Check which note is currently at the bird line
+        updatedBars.forEach(bar => {
+          const barLeft = bar.x;
+          const barRight = bar.x + (bar.width || 100);
+          
+          // If this bar is crossing or at the bird line, it's the current active note
+          if (barLeft <= birdLineX && barRight >= birdLineX && bar.originalIndex !== undefined) {
+            currentNoteAtBirdLine = bar.originalIndex % this.notes.length;
+          }
+        });
+        
         return {
           bars: updatedBars,
-          elapsedTime: currentTime
+          elapsedTime: currentTime,
+          currentNoteIndex: currentNoteAtBirdLine
         };
       });
     }, 30);
   };
 
-getSpawnInterval = (noteIndex: number): number => {
+  getSpawnInterval = (noteIndex: number): number => {
     // Calculate spawn interval based on the actual spacing between notes
     if (noteIndex === 0) {
       return 1000; // First note spawns after 1 second
@@ -693,7 +779,7 @@ getSpawnInterval = (noteIndex: number): number => {
     const baseWidthMultiplier = 60 + (this.bpm * 0.5);
     const prevBarWidth = Math.max(prevDuration * baseWidthMultiplier, 60);
     const barTimeInSeconds = prevBarWidth / pixelsPerSecond;
-    const minGapPixels = 15; // Reduced gap between spawned notes (was 150)
+    const minGapPixels = 150;
     const minGapTime = minGapPixels / pixelsPerSecond;
     
     // Total time is previous duration + gap time
@@ -728,6 +814,8 @@ getSpawnInterval = (noteIndex: number): number => {
         });
         
         nextBarIndex++;
+        
+        // Schedule the next note with proper spacing
         const nextInterval = this.getSpawnInterval(nextBarIndex);
         this.noteSpawnTimer = window.setTimeout(scheduleNextNote, nextInterval);
       } else {
@@ -751,8 +839,23 @@ getSpawnInterval = (noteIndex: number): number => {
     // Start the first note
     scheduleNextNote();
   };
+
   play = async (hz?: number, notes?: GameNote[]): Promise<void> => {
     if (this.state.gameState === 'playing') return;
+    
+    // Resume audio context for harmonics
+    if (this.soundSynthesis) {
+      try {
+        // Access the audioContext from SoundSynthesis and resume it
+        const audioContext = (this.soundSynthesis as any).audioContext;
+        if (audioContext && audioContext.state === 'suspended') {
+          await audioContext.resume();
+          console.log('AudioContext resumed for harmonics');
+        }
+      } catch (error) {
+        console.error('Failed to resume audio context:', error);
+      }
+    }
     
     // Update BPM and notes if provided
     if (hz) {
@@ -783,7 +886,7 @@ getSpawnInterval = (noteIndex: number): number => {
     this.spawnBars();
   };
 
-  pause = () => {
+  pause = (): void => {
     if (this.state.gameState !== 'playing') return;
     
     this.setState({ gameState: 'paused' });
@@ -793,7 +896,7 @@ getSpawnInterval = (noteIndex: number): number => {
     if (this.noteSpawnTimer) window.clearTimeout(this.noteSpawnTimer);
   };
 
-  resume = () => {
+  resume = (): void => {
     if (this.state.gameState !== 'paused') return;
     
     this.setState({ gameState: 'playing' });
@@ -803,7 +906,7 @@ getSpawnInterval = (noteIndex: number): number => {
     this.spawnBars();
   };
 
-  stop = () => {
+  stop = (): void => {
     // Clear all intervals first to prevent new bars from spawning
     if (this.gravityLoopId) window.clearInterval(this.gravityLoopId);
     if (this.gameLoopId) window.clearInterval(this.gameLoopId);
@@ -870,6 +973,35 @@ getSpawnInterval = (noteIndex: number): number => {
     this.displayScore();
   };
 
+  toggleHarmonics = async (): Promise<void> => {
+    // Resume audio context if needed before testing
+    if (this.soundSynthesis) {
+      try {
+        const audioContext = (this.soundSynthesis as any).audioContext;
+        if (audioContext && audioContext.state === 'suspended') {
+          await audioContext.resume();
+          console.log('AudioContext resumed for harmonics toggle');
+        }
+      } catch (error) {
+        console.error('Failed to resume audio context:', error);
+      }
+    }
+    
+    this.setState(prevState => {
+      const newHarmonicsState = !prevState.harmonicsEnabled;
+      
+      // Test harmonics when enabling
+      if (newHarmonicsState && this.soundSynthesis) {
+        console.log('Testing harmonics with 440Hz tone...');
+        this.soundSynthesis.playTone(440, 0.3, 'sine'); // Test A4 note
+      }
+      
+      return {
+        harmonicsEnabled: newHarmonicsState
+      };
+    });
+  };
+
   displayScore = () => {
     const { score } = this.state;
     const maxPossibleScore = this.notes.length * 10 * this.modeSettings[this.mode].scoreMultiplier;
@@ -912,17 +1044,18 @@ getSpawnInterval = (noteIndex: number): number => {
     } = this.state;
 
     const capitalizedMode = this.mode.charAt(0).toUpperCase() + this.mode.slice(1);
-        const screenWidth = window.innerWidth;
-    let runnerXPercentage = 0.40; // 40% by default (moved right)
+
+    // Calculate bird line position (same logic as in game loop)
+    const screenWidth = window.innerWidth;
+    let runnerXPercentage = 0.30; // 30% by default
     
     if (screenWidth <= 480) {
-      runnerXPercentage = 0.30; // 30% on mobile (moved right)
+      runnerXPercentage = 0.20; // 20% on mobile
     } else if (screenWidth <= 768) {
-      runnerXPercentage = 0.35; // 35% on tablet (moved right)
+      runnerXPercentage = 0.25; // 25% on tablet
     }
-        const birdWidth = 35; // Bird width from CSS (reduced from 50)
-    const runnerLeftEdge = screenWidth * runnerXPercentage; // Left edge position from CSS
-    const birdLineX = runnerLeftEdge + (birdWidth / 2); // Center position for bird line
+    
+    const birdLineX = screenWidth * runnerXPercentage; // Bird center line matching CSS position
 
     return (
       <div 
@@ -934,26 +1067,35 @@ getSpawnInterval = (noteIndex: number): number => {
         <div className="game-area">
           <div className="ground-line" style={{ top: this.groundLevel }} />
           
+          {/* Invisible harmonic trigger line at bird position */}
+          <div 
+            className="bird-harmonic-line"
+            style={{
+              position: 'absolute',
+              left: birdLineX,
+              top: 0,
+              width: '2px',
+              height: '100%',
+              backgroundColor: 'transparent', // Invisible to users
+              pointerEvents: 'none',
+              zIndex: 1
+            }}
+          />
+          
           <div 
             className={`runner ${isJumping ? 'jumping' : 'running'}`}
             style={{ top: runnerY }}
           >
-            {(() => {
-              const duckProps = this.getDuckImageAndStyle(currentFrequency);
-              return (
-                <img 
-                  src={duckProps.src}
-                  alt={duckProps.alt}
-                  className={duckProps.className}
+            <img 
+              src={flappyBirdImage}
+              alt="Flappy Bird"
+              className="bird-image"
               style={{ 
-                width: '35px',
-                height: '35px',
+                width: '50px',
+                height: '50px',
                 objectFit: 'contain'
               }}
-                />
-              );
-            })()}
-            <span className="bird-fallback" style={{display: 'none'}}>🦆</span>
+            />
           </div>
           
           {bars.map(bar => {
@@ -970,16 +1112,24 @@ getSpawnInterval = (noteIndex: number): number => {
               : 0;
             const requiredPercentage = this.modeSettings[this.mode].threshold * 100;
             
-            // Determine bar color based on contact percentage
+            // Check if this note is currently at the bird line (active note)
             const barLeft = bar.x;
             const barRight = bar.x + (bar.width || 100);
-            const orangeTriggerOffset = -500; // only 5px gap from bird (reduced from -30px)
-            const adjustedBirdLineX = birdLineX ;
-            const isAtBirdLine = barLeft <= adjustedBirdLineX && barRight >= birdLineX;
+            const isAtBirdLine = barLeft <= birdLineX && barRight >= birdLineX;
+            
+            // Determine bar color based on contact percentage and completion status
             let barColor = '#2196F3'; // Default blue color for untouched
             let borderColor = '#1976D2';
             
-            if (bar.contactStartTime || contactPercentage > 0) {
+            if (bar.collected) {
+              // Completed notes are bright green
+              barColor = '#4CAF50'; // Bright green for completed
+              borderColor = '#2E7D32';
+            } else if (isAtBirdLine && !bar.contactStartTime) {
+              // Note is at bird line (active) but not being touched - orange highlight
+              barColor = '#FF9800'; // Orange for active note at bird line
+              borderColor = '#F57C00';
+            } else if (bar.contactStartTime || contactPercentage > 0) {
               if (contactPercentage < 75) {
                 barColor = '#F44336'; // Red for < 75%
                 borderColor = '#D32F2F';
@@ -989,15 +1139,24 @@ getSpawnInterval = (noteIndex: number): number => {
               } else if (contactPercentage < 90) {
                 barColor = '#FFEB3B'; // Yellow for 85-90%
                 borderColor = '#FBC02D';
+              } else if (contactPercentage >= requiredPercentage) {
+                barColor = '#8BC34A'; // Light green for meeting threshold but not completed
+                borderColor = '#689F38';
               } else {
                 barColor = '#4CAF50'; // Green for > 90%
                 borderColor = '#388E3C';
               }
             }
             
-            // Apply opacity when bird is actively touching
+            // Apply visual effects based on state
             const isCurrentlyTouching = bar.contactStartTime && !bar.collected;
-            const opacity = isCurrentlyTouching ? 0.7 : 1.0;
+            const opacity = bar.collected ? 1.0 : (isCurrentlyTouching ? 0.7 : 1.0);
+            let boxShadow = bar.collected ? '0 0 10px rgba(76, 175, 80, 0.6)' : 'none';
+            
+            // Add pulse effect for active note at bird line (like blue line in WaveformCanvas)
+            if (isAtBirdLine && !bar.collected && !bar.contactStartTime) {
+              boxShadow = '0 0 15px rgba(255, 152, 0, 0.8)'; // Orange glow for active note
+            }
             
             return (
               <div
@@ -1010,15 +1169,16 @@ getSpawnInterval = (noteIndex: number): number => {
                   backgroundColor: barColor,
                   borderColor: borderColor,
                   opacity: opacity,
+                  boxShadow: boxShadow,
                   // Force hardware acceleration to prevent sticking
                   transform: 'translate3d(0,0,0)',
                   willChange: 'transform',
-                  transition: 'background-color 0.2s ease, opacity 0.1s ease, border-color 0.2s ease'
+                  transition: 'background-color 0.2s ease, opacity 0.1s ease, border-color 0.2s ease, box-shadow 0.2s ease'
                 }}
               >
                 <span className="note-label" style={{ fontWeight: 'bold' }}>{bar.note}</span>
                 
-                {/* Progress indicator - Shows exact percentage */}
+                {/* Progress indicator - Shows exact percentage only when actively touching */}
                 {bar.contactStartTime && contactPercentage > 0 && (
                   <div 
                     className="contact-progress"
@@ -1035,7 +1195,7 @@ getSpawnInterval = (noteIndex: number): number => {
                   />
                 )}
                 
-                {/* Percentage display when touching */}
+                {/* Percentage display when actively touching */}
                 {bar.contactStartTime && contactPercentage > 0 && (
                   <div 
                     className="percentage-display"
@@ -1085,7 +1245,10 @@ getSpawnInterval = (noteIndex: number): number => {
                 Average: {this.state.averagePercentage.toFixed(1)}% | Cycles: {this.state.cycleScores.length}
               </div>
             )}
-
+            
+            {/* <div className={`voice-indicator ${voiceDetected ? 'active' : ''}`}>
+              🎵 {voiceDetected ? `${currentFrequency.toFixed(0)}Hz` : 'Sing to jump'}
+            </div> */}
             
             {gameState === 'stopped' && finalScore > 0 && (
               <div className="final-score">
@@ -1109,7 +1272,7 @@ getSpawnInterval = (noteIndex: number): number => {
             </div>
           )}
           
-          {gameState === 'stopped'  && finalScore > 0 && (
+          {gameState === 'stopped' && finalScore > 0 && (
             <div className="stop-popup-overlay">
               <div className="stop-popup">
                 <h2>Game Over</h2>
@@ -1131,6 +1294,7 @@ getSpawnInterval = (noteIndex: number): number => {
             </div>
           )}
           
+          {/* Control panel moved to header - keeping this hidden */}
           <div className="control-panel" style={{ display: 'none' }}>
             <button onClick={() => this.play()} disabled={gameState === 'playing'}>
               ▶️ Play
@@ -1145,6 +1309,7 @@ getSpawnInterval = (noteIndex: number): number => {
               🔄 Restart
             </button>
             <button 
+              onClick={this.toggleHarmonics}
               style={{ 
                 backgroundColor: this.state.harmonicsEnabled ? '#4CAF50' : '#f44336',
                 color: 'white',
@@ -1155,6 +1320,27 @@ getSpawnInterval = (noteIndex: number): number => {
             </button>
           </div>
           
+          <div className="color-legend">
+            <div className="legend-title">Note Colors:</div>
+            <div className="legend-items">
+              <div className="legend-item">
+                <span className="color-box" style={{ backgroundColor: '#F44336' }}></span>
+                <span>&lt; 75%</span>
+              </div>
+              <div className="legend-item">
+                <span className="color-box" style={{ backgroundColor: '#FF9800' }}></span>
+                <span>75-85%</span>
+              </div>
+              <div className="legend-item">
+                <span className="color-box" style={{ backgroundColor: '#FFEB3B' }}></span>
+                <span>85-90%</span>
+              </div>
+              <div className="legend-item">
+                <span className="color-box" style={{ backgroundColor: '#4CAF50' }}></span>
+                <span>&gt; 90%</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1164,6 +1350,5 @@ getSpawnInterval = (noteIndex: number): number => {
 const DuckVoiceGameSDK = forwardRef<DuckVoiceGameSDKComponent, DuckVoiceGameSDKProps>((props, ref) => {
   return <DuckVoiceGameSDKComponent ref={ref as any} {...props} />;
 });
-
 
 export default DuckVoiceGameSDK;
