@@ -20,6 +20,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [resetTrigger, setResetTrigger] = useState(0);
   const [isGameMode, setIsGameMode] = useState(false);
+  const [isGamePlaying, setIsGamePlaying] = useState(false);
   const pitchDetectorRef = useRef<PitchDetector | null>(null);
 
   useEffect(() => {
@@ -170,7 +171,7 @@ function App() {
       
       <div className="app-content">
         <aside className="left-sidebar">
-          <LeftMenu onNotesChange={handleNotesChange} isPlaying={isPlaying} />
+          <LeftMenu onNotesChange={handleNotesChange} isPlaying={isPlaying} isGameMode={isGameMode} isGamePlaying={isGamePlaying} />
           
           <div className="frequency-section-sidebar">
             <FrequencyDisplay
@@ -186,7 +187,11 @@ function App() {
         <main className="main-content">
           {isGameMode ? (
             <VocalGameCanvas 
-              onClose={() => setIsGameMode(false)}
+              onClose={() => {
+                setIsGameMode(false);
+                setIsGamePlaying(false);
+              }}
+              onGameStateChange={setIsGamePlaying}
               notes={notes}
               noteDurations={noteDurations}
               bpm={bpm}

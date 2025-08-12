@@ -9,11 +9,15 @@ interface LeftMenuProps {
     isReset?: boolean
   ) => void;
   isPlaying?: boolean;
+  isGameMode?: boolean;
+  isGamePlaying?: boolean;
 }
 
 export const LeftMenu: React.FC<LeftMenuProps> = ({
   onNotesChange,
   isPlaying = false,
+  isGameMode = false,
+  isGamePlaying = false,
 }) => {
   const defaultNotes = "C3,B2, D3, E3, F3, G3, A3, B3";
   const [inputValue, setInputValue] = useState(defaultNotes);
@@ -116,6 +120,8 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
   };
 
   const shouldHideInput = isMobileOrTablet && isPlaying;
+  const shouldHideInLandscape = isGameMode && window.innerWidth > window.innerHeight && window.innerHeight <= 500;
+  const shouldHideInGamePlayingMobileLandscape = isGameMode && isGamePlaying && window.innerWidth > window.innerHeight && window.innerHeight <= 500;
 
   return (
     <div className="left-menu">
@@ -123,40 +129,42 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
         <div className="left-menu-content">
           <h2>Musical Notes</h2>
 
-          <div className="note-input-section">
-            <label htmlFor="notes-input" className="input-label">
-              Enter notes (comma-separated, optional duration in ms - e.g.,
-              C4:1500):
-            </label>
-            <textarea
-              id="notes-input"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g., C4, D4:1500, E4, F4:3000, G4"
-              className="notes-textarea"
-              rows={3}
-            />
+          {!shouldHideInLandscape && !shouldHideInGamePlayingMobileLandscape && (
+            <div className="note-input-section">
+              <label htmlFor="notes-input" className="input-label">
+                Enter notes (comma-separated, optional duration in ms - e.g.,
+                C4:1500):
+              </label>
+              <textarea
+                id="notes-input"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="e.g., C4, D4:1500, E4, F4:3000, G4"
+                className="notes-textarea"
+                rows={3}
+              />
 
-            <div className="button-group">
-              <button onClick={handleSetNotes} className="set-notes-button">
-                Set Notes
-              </button>
-              <button onClick={handleReset} className="reset-button">
-                Reset to Default
-              </button>
-            </div>
-
-            {errorMessage && (
-              <div
-                className={`message ${
-                  errorMessage.includes("Invalid") ? "error" : "success"
-                }`}
-              >
-                {errorMessage}
+              <div className="button-group">
+                <button onClick={handleSetNotes} className="set-notes-button">
+                  Set Notes
+                </button>
+                <button onClick={handleReset} className="reset-button">
+                  Reset to Default
+                </button>
               </div>
-            )}
-          </div>
+
+              {errorMessage && (
+                <div
+                  className={`message ${
+                    errorMessage.includes("Invalid") ? "error" : "success"
+                  }`}
+                >
+                  {errorMessage}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

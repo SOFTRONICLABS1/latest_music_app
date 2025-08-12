@@ -121,7 +121,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     
     this.state = {
       gameState: 'idle',
-      runnerY: this.groundLevel - 60,
+      runnerY: this.groundLevel - 45, // Adjusted for smaller bird (35px height + 10px margin)
       runnerVelocity: 0,
       bars: [],
       score: 0,
@@ -179,7 +179,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       
       // Update runner position if needed
       this.setState(prevState => ({
-        runnerY: Math.min(prevState.runnerY, this.groundLevel - 60)
+        runnerY: Math.min(prevState.runnerY, this.groundLevel - 45) // Adjusted for smaller bird
       }));
       
       // Recalculate bar positions for new dimensions
@@ -210,7 +210,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       // Calculate spacing to prevent overlap based on bar width and movement
       // Ensure there's always clear space between notes
       const barTimeInSeconds = barWidth / pixelsPerSecond;
-      const minGapPixels = 10; // Minimum gap in pixels between notes
+      const minGapPixels = 5; // Reduced minimum gap in pixels between notes (was 10)
       const minGapTime = minGapPixels / pixelsPerSecond;
       
       // Use the note duration plus minimum gap time
@@ -422,22 +422,26 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
   };
 
   checkBarCollection = (frequency: number): void => {
-    // Calculate responsive runner position
+    // Calculate responsive runner position to match CSS positioning exactly
     const screenWidth = window.innerWidth;
-    let runnerXPercentage = 0.30; // 30% by default
+    let runnerXPercentage = 0.40; // 40% by default (moved right)
     
     if (screenWidth <= 480) {
-      runnerXPercentage = 0.20; // 20% on mobile
+      runnerXPercentage = 0.30; // 30% on mobile (moved right)
     } else if (screenWidth <= 768) {
-      runnerXPercentage = 0.25; // 25% on tablet
+      runnerXPercentage = 0.35; // 35% on tablet (moved right)
     }
     
-    const runnerX = screenWidth * runnerXPercentage; // Use exact percentage position from CSS
+    // CSS left: 30% positions the LEFT EDGE of the bird element
+    // Calculate the bird's actual position for collision detection
+    const birdWidth = 35; // Bird width from CSS (reduced from 50)
+    const runnerLeftEdge = screenWidth * runnerXPercentage - 10; // Left edge position from CSS
+    const runnerX = runnerLeftEdge; // Use left edge, not center, for collision
     
     this.setState(prevState => {
       let scoreGained = 0;
       const runnerTop = prevState.runnerY;
-      const runnerBottom = prevState.runnerY + 50;
+      const runnerBottom = prevState.runnerY + 35; // Bird height (reduced from 50)
       const currentTime = Date.now();
       const requiredThreshold = this.modeSettings[this.mode].threshold;
       
@@ -450,24 +454,25 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
         const barTop = bar.y;
         const barBottom = bar.y + 20;
         
-        // More precise collision detection - bird must be properly inside the note
-        const birdWidth = 50; // Bird width
-        const birdHeight = 50; // Bird height
-        const birdLeft = runnerX - (birdWidth / 2);
-        const birdRight = runnerX + (birdWidth / 2);
-        const birdTop = runnerTop;
-        const birdBottom = runnerBottom;
+        // Collision detection with bird bounds matching CSS positioning
+        const birdWidth = 35; // Bird width (reduced from 50)
+        const birdHeight = 35; // Bird height (reduced from 50)
+        const touchMargin = 5; // Extra pixels for more responsive touch detection
+        const birdLeft = runnerX - touchMargin; // Left edge from CSS
+        const birdRight = runnerX + birdWidth + touchMargin; // Right edge
+        const birdTop = runnerTop - touchMargin;
+        const birdBottom = runnerBottom + touchMargin;
         
-        // Check for actual overlap (not just edge touching)
+        // Check for any overlap at all - bird just needs to touch the note
         const horizontalOverlap = birdRight > barLeft && birdLeft < barRight;
         const verticalOverlap = birdBottom > barTop && birdTop < barBottom;
         
-        // Additional check: ensure significant overlap (at least 20 pixels in each direction)
-        const horizontalOverlapAmount = Math.min(birdRight, barRight) - Math.max(birdLeft, barLeft);
-        const verticalOverlapAmount = Math.min(birdBottom, barBottom) - Math.max(birdTop, barTop);
-        const significantOverlap = horizontalOverlapAmount >= 20 && verticalOverlapAmount >= 15;
+        // Debug collision detection
+        if (horizontalOverlap && verticalOverlap) {
+          console.log(`Collision detected: Bird(${birdLeft.toFixed(0)}-${birdRight.toFixed(0)}, ${birdTop.toFixed(0)}-${birdBottom.toFixed(0)}) vs Bar(${barLeft.toFixed(0)}-${barRight.toFixed(0)}, ${barTop.toFixed(0)}-${barBottom.toFixed(0)})`);
+        }
         
-        if (horizontalOverlap && verticalOverlap && significantOverlap) {
+        if (horizontalOverlap && verticalOverlap) {
           // More forgiving frequency matching
           const frequencyTolerance = 80; // Fixed tolerance
           const frequencyDifference = Math.abs(frequency - bar.frequency);
@@ -484,7 +489,12 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
               // Play harmonic feedback when user starts touching the note correctly
               if (this.soundSynthesis && prevState.harmonicsEnabled) {
                 console.log('Playing contact tone for:', bar.frequency, 'Hz');
-                this.soundSynthesis.playTone(bar.frequency, 0.15, 'sine');
+                try {
+                  this.soundSynthesis.playTone(bar.frequency, 0.15, 'sine');
+                  console.log('Contact tone played successfully');
+                } catch (error) {
+                  console.error('Failed to play contact tone:', error);
+                }
               }
             }
             
@@ -571,8 +581,8 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
           let newY = prevState.runnerY + prevState.runnerVelocity;
           
           // Ground collision
-          if (newY >= this.groundLevel - 60) {
-            newY = this.groundLevel - 60;
+          if (newY >= this.groundLevel - 45) {
+            newY = this.groundLevel - 45; // Adjusted for smaller bird
             return {
               runnerY: newY,
               runnerVelocity: 0,
@@ -609,8 +619,8 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
           let newY = prevState.runnerY + newVelocity;
           
           // Ground collision
-          if (newY >= this.groundLevel - 60) {
-            newY = this.groundLevel - 60;
+          if (newY >= this.groundLevel - 45) {
+            newY = this.groundLevel - 45; // Adjusted for smaller bird
             newVelocity = 0;
           }
           
@@ -623,7 +633,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
           return {
             runnerY: newY,
             runnerVelocity: newVelocity,
-            isJumping: newY !== this.groundLevel - 60
+            isJumping: newY !== this.groundLevel - 45 // Adjusted for smaller bird
           };
         }
       });
@@ -639,15 +649,19 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       this.setState(prevState => {
         // Calculate bird line position for harmonic detection
         const screenWidth = window.innerWidth;
-        let runnerXPercentage = 0.30; // 30% by default
+        let runnerXPercentage = 0.40; // 40% by default (moved right)
         
         if (screenWidth <= 480) {
-          runnerXPercentage = 0.20; // 20% on mobile
+          runnerXPercentage = 0.30; // 30% on mobile (moved right)
         } else if (screenWidth <= 768) {
-          runnerXPercentage = 0.25; // 25% on tablet
+          runnerXPercentage = 0.35; // 35% on tablet (moved right)
         }
         
-        const birdLineX = screenWidth * runnerXPercentage; // Bird center line matching CSS position
+        // CSS left: 30% positions the LEFT EDGE of the bird element
+        // Use the same positioning as collision detection
+        const birdWidth = 35; // Bird width from CSS (reduced from 50)
+        const runnerLeftEdge = screenWidth * runnerXPercentage; // Left edge position from CSS
+        const birdLineX = runnerLeftEdge + (birdWidth / 2); // Center position for reference line
         
         // Move bars and detect harmonic triggers
         // Calculate movement speed based on BPM
@@ -665,24 +679,13 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
           const prevBarLeft = bar.x;
           const prevBarRight = bar.x + (bar.width || 100);
           
-          // Detect crossing: bar was to the right of line, now crosses or passes it
+          // Detect when note crosses the bird line for reference tracking
           const wasPastLine = prevBarLeft > birdLineX;
           const nowCrossesLine = barLeft <= birdLineX && barRight >= birdLineX;
-          const justPassedLine = prevBarRight > birdLineX && barRight < birdLineX;
           
-          // When note reaches the bird line (like blue line in WaveformCanvas), it becomes "active"
-          if ((wasPastLine && (nowCrossesLine || justPassedLine)) && !newBar.hasPlayedHarmonic) {
-            // This note is now active at the bird line - play reference harmonic
-            console.log('Note reached bird line:', newBar.note, newBar.frequency, 'Hz');
-            console.log('SoundSynthesis exists:', !!this.soundSynthesis);
-            console.log('Game playing:', prevState.gameState === 'playing');
-            console.log('Harmonics enabled:', prevState.harmonicsEnabled);
-            
-            if (this.soundSynthesis && prevState.gameState === 'playing' && prevState.harmonicsEnabled) {
-              console.log('Playing harmonic chord for:', newBar.frequency, 'Hz');
-              this.soundSynthesis.playHarmonicChord(newBar.frequency, 0.8);
-            }
-            newBar.hasPlayedHarmonic = true;
+          // Update reference tracking when note crosses bird line
+          if (wasPastLine && nowCrossesLine && !newBar.hasPlayedHarmonic) {
+            newBar.hasPlayedHarmonic = true; // Mark to prevent duplicate triggers
             
             // Update current note index to track which note is at the bird line
             // This makes the bird act like the blue line reference
@@ -779,7 +782,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     const baseWidthMultiplier = 60 + (this.bpm * 0.5);
     const prevBarWidth = Math.max(prevDuration * baseWidthMultiplier, 60);
     const barTimeInSeconds = prevBarWidth / pixelsPerSecond;
-    const minGapPixels = 150;
+    const minGapPixels = 15; // Reduced gap between spawned notes (was 150)
     const minGapTime = minGapPixels / pixelsPerSecond;
     
     // Total time is previous duration + gap time
@@ -848,10 +851,17 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       try {
         // Access the audioContext from SoundSynthesis and resume it
         const audioContext = (this.soundSynthesis as any).audioContext;
+        console.log('AudioContext state before resume:', audioContext?.state);
         if (audioContext && audioContext.state === 'suspended') {
           await audioContext.resume();
-          console.log('AudioContext resumed for harmonics');
+          console.log('AudioContext resumed for harmonics, new state:', audioContext.state);
+        } else {
+          console.log('AudioContext already running or not suspended');
         }
+        
+        // Test audio by playing a quick tone
+        console.log('Testing harmonics with quick tone...');
+        this.soundSynthesis.playTone(440, 0.1, 'sine');
       } catch (error) {
         console.error('Failed to resume audio context:', error);
       }
@@ -870,7 +880,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       gameState: 'playing',
       score: 0,
       bars: [],
-      runnerY: this.groundLevel - 60,
+      runnerY: this.groundLevel - 45, // Adjusted for smaller bird (35px height + 10px margin)
       runnerVelocity: 0,
       currentNoteIndex: 0,
       noteProgress: {},
@@ -921,7 +931,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     this.setState({
       gameState: 'stopped',
       finalScore: this.state.score,
-      runnerY: this.groundLevel - 60,
+      runnerY: this.groundLevel - 45, // Adjusted for smaller bird (35px height + 10px margin)
       runnerVelocity: 0,
       bars: [], // Force clear all bars
       currentNoteIndex: 0,
@@ -951,7 +961,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       gameState: 'idle',
       score: 0,
       finalScore: 0,
-      runnerY: this.groundLevel - 60,
+      runnerY: this.groundLevel - 45, // Adjusted for smaller bird (35px height + 10px margin)
       runnerVelocity: 0,
       bars: [], // Force clear all bars
       currentNoteIndex: 0,
@@ -993,7 +1003,12 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       // Test harmonics when enabling
       if (newHarmonicsState && this.soundSynthesis) {
         console.log('Testing harmonics with 440Hz tone...');
-        this.soundSynthesis.playTone(440, 0.3, 'sine'); // Test A4 note
+        try {
+          this.soundSynthesis.playTone(440, 0.3, 'sine'); // Test A4 note
+          console.log('Harmonics test tone played successfully');
+        } catch (error) {
+          console.error('Failed to play harmonics test tone:', error);
+        }
       }
       
       return {
@@ -1047,15 +1062,19 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
 
     // Calculate bird line position (same logic as in game loop)
     const screenWidth = window.innerWidth;
-    let runnerXPercentage = 0.30; // 30% by default
+    let runnerXPercentage = 0.40; // 40% by default (moved right)
     
     if (screenWidth <= 480) {
-      runnerXPercentage = 0.20; // 20% on mobile
+      runnerXPercentage = 0.30; // 30% on mobile (moved right)
     } else if (screenWidth <= 768) {
-      runnerXPercentage = 0.25; // 25% on tablet
+      runnerXPercentage = 0.35; // 35% on tablet (moved right)
     }
     
-    const birdLineX = screenWidth * runnerXPercentage; // Bird center line matching CSS position
+    // CSS left: 30% positions the LEFT EDGE of the bird element
+    // Use center position for the reference line visualization
+    const birdWidth = 35; // Bird width from CSS (reduced from 50)
+    const runnerLeftEdge = screenWidth * runnerXPercentage; // Left edge position from CSS
+    const birdLineX = runnerLeftEdge + (birdWidth / 2); // Center position for bird line
 
     return (
       <div 
@@ -1091,8 +1110,8 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
               alt="Flappy Bird"
               className="bird-image"
               style={{ 
-                width: '50px',
-                height: '50px',
+                width: '35px',
+                height: '35px',
                 objectFit: 'contain'
               }}
             />
@@ -1113,9 +1132,12 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
             const requiredPercentage = this.modeSettings[this.mode].threshold * 100;
             
             // Check if this note is currently at the bird line (active note)
+            // Trigger orange state slightly to the left of bird line for better timing
             const barLeft = bar.x;
             const barRight = bar.x + (bar.width || 100);
-            const isAtBirdLine = barLeft <= birdLineX && barRight >= birdLineX;
+            const orangeTriggerOffset = -500; // only 5px gap from bird (reduced from -30px)
+            const adjustedBirdLineX = birdLineX ;
+            const isAtBirdLine = barLeft <= adjustedBirdLineX && barRight >= birdLineX;
             
             // Determine bar color based on contact percentage and completion status
             let barColor = '#2196F3'; // Default blue color for untouched
@@ -1129,6 +1151,19 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
               // Note is at bird line (active) but not being touched - orange highlight
               barColor = '#FF9800'; // Orange for active note at bird line
               borderColor = '#F57C00';
+              
+              // Play guitar harmonics when note turns orange (becomes active at bird line)
+              if (!bar.hasPlayedHarmonic && this.soundSynthesis && gameState === 'playing' && this.state.harmonicsEnabled) {
+                console.log('Note turned orange - playing guitar harmonic:', bar.note, bar.frequency, 'Hz');
+                try {
+                  this.soundSynthesis.playHarmonicChord(bar.frequency, 0.6);
+                  console.log('Guitar harmonic played successfully for orange note');
+                  // Mark as played to prevent repeated triggers
+                  bar.hasPlayedHarmonic = true;
+                } catch (error) {
+                  console.error('Failed to play guitar harmonic for orange note:', error);
+                }
+              }
             } else if (bar.contactStartTime || contactPercentage > 0) {
               if (contactPercentage < 75) {
                 barColor = '#F44336'; // Red for < 75%
@@ -1318,28 +1353,6 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
             >
               🎵 Harmonics: {this.state.harmonicsEnabled ? 'ON' : 'OFF'}
             </button>
-          </div>
-          
-          <div className="color-legend">
-            <div className="legend-title">Note Colors:</div>
-            <div className="legend-items">
-              <div className="legend-item">
-                <span className="color-box" style={{ backgroundColor: '#F44336' }}></span>
-                <span>&lt; 75%</span>
-              </div>
-              <div className="legend-item">
-                <span className="color-box" style={{ backgroundColor: '#FF9800' }}></span>
-                <span>75-85%</span>
-              </div>
-              <div className="legend-item">
-                <span className="color-box" style={{ backgroundColor: '#FFEB3B' }}></span>
-                <span>85-90%</span>
-              </div>
-              <div className="legend-item">
-                <span className="color-box" style={{ backgroundColor: '#4CAF50' }}></span>
-                <span>&gt; 90%</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>

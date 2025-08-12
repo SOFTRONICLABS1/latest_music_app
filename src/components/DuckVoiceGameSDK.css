@@ -64,7 +64,7 @@
 
 .runner {
   position: absolute;
-  left: 30%; /* Use percentage for responsive positioning */
+  left: 40%; /* Moved right from 30% */
   font-size: 50px; /* Back to original size for fallback emoji */
   z-index: 10;
   transition: top 0.1s ease-out;
@@ -75,23 +75,23 @@
 /* Responsive runner positioning */
 @media (max-width: 768px) {
   .runner {
-    left: 25%;
+    left: 35%; /* Moved right from 25% */
   }
   
   .bird-image {
-    width: 45px;
-    height: 45px;
+    width: 32px; /* Reduced proportionally from 45px */
+    height: 32px;
   }
 }
 
 @media (max-width: 480px) {
   .runner {
-    left: 20%;
+    left: 30%; /* Moved right from 20% */
   }
   
   .bird-image {
-    width: 40px;
-    height: 40px;
+    width: 28px; /* Reduced proportionally from 40px */
+    height: 28px;
   }
   
   .bird-fallback {
@@ -100,8 +100,8 @@
 }
 
 .bird-image {
-  width: 50px;  /* Back to original size */
-  height: 50px; /* Back to original size */
+  width: 35px;  /* Reduced from 50px */
+  height: 35px; /* Reduced from 50px */
   object-fit: contain;
   display: block;
   transition: filter 0.2s ease-out, transform 0.2s ease-out;
@@ -570,8 +570,8 @@
   }
   
   .bird-image {
-    width: 45px;
-    height: 45px;
+    width: 32px; /* Reduced proportionally from 45px */
+    height: 32px;
   }
   
   .horizontal-bar {
@@ -606,8 +606,8 @@
   }
   
   .bird-image {
-    width: 40px;
-    height: 40px;
+    width: 28px; /* Reduced proportionally from 40px */
+    height: 28px;
   }
   
   .horizontal-bar {
@@ -854,12 +854,12 @@
   }
 
   .runner {
-    left: 25%;
+    left: 35%; /* Moved right from 25% */
   }
 
   .bird-image {
-    width: 40px;
-    height: 40px;
+    width: 28px; /* Reduced proportionally from 40px */
+    height: 28px;
   }
 
   .horizontal-bar {
@@ -896,51 +896,77 @@
   }
 
   .pause-popup {
-    padding: 20px;
-    min-width: 250px;
+    padding: 15px 20px;
+    min-width: 200px;
+    max-width: 80vw;
+    max-height: 70vh;
+    overflow-y: auto;
   }
 
   .pause-popup h2 {
+    font-size: 18px;
+    margin-bottom: 10px;
+  }
+
+  .current-score {
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .mode-info {
+    font-size: 12px;
+    margin-bottom: 15px;
+  }
+
+  .continue-button {
+    padding: 8px 16px;
+    font-size: 12px;
+    min-width: 100px;
+  }
+
+  .stop-popup {
+    padding: 20px 25px;
+    min-width: 220px;
+    max-width: 80vw;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  .stop-popup h2 {
     font-size: 20px;
     margin-bottom: 15px;
   }
 
-  .current-score {
+  .overall-score {
     font-size: 16px;
+    margin-bottom: 10px;
   }
 
-  .mode-info {
-    font-size: 14px;
+  .completion-rate {
+    font-size: 10px;
+    margin-bottom: 10px;
   }
 
-  .continue-button {
+  .restart-button {
     padding: 10px 20px;
     font-size: 14px;
     min-width: 120px;
   }
 
-  .stop-popup {
-    padding: 30px;
-    min-width: 280px;
+  /* Ensure popups are properly positioned and visible in landscape */
+  .pause-popup-overlay, 
+  .stop-popup-overlay {
+    position: fixed;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .stop-popup h2 {
-    font-size: 24px;
-    margin-bottom: 20px;
-  }
-
-  .overall-score {
-    font-size: 20px;
-  }
-
-  .completion-rate {
-    font-size: 12px;
-  }
-
-  .restart-button {
-    padding: 12px 25px;
-    font-size: 16px;
-    min-width: 140px;
+  .pause-score, 
+  .final-score-display {
+    margin-bottom: 8px;
+    padding: 6px;
   }
 
   /* Adjust ground level for landscape */

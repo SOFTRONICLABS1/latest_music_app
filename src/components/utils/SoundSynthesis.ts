@@ -19,31 +19,40 @@ export class SoundSynthesis {
     return harmonics;
   }
 
-  // Play a harmonic chord based on the fundamental frequency
+  // Play guitar-like harmonic chord based on the fundamental frequency
   playHarmonicChord(frequency: number, duration: number = 0.3): void {
     if (this.audioContext.state === 'suspended') {
       this.audioContext.resume();
     }
 
-    const harmonics = this.generateHarmonics(frequency, 4); // Use 4 harmonics
+    // Guitar harmonics - emphasize 2nd, 3rd, and 5th harmonics (octave, fifth, major third)
+    const guitarHarmonics = [
+      frequency,           // Fundamental
+      frequency * 2,       // Octave (strong in guitars)
+      frequency * 3,       // Perfect fifth (strong in guitars)
+      frequency * 4        // Two octaves up
+    ];
+    
     const now = this.audioContext.currentTime;
     
-    harmonics.forEach((harmonic, index) => {
+    guitarHarmonics.forEach((harmonic, index) => {
       // Skip harmonics that are too high
-      if (harmonic > 4000) return;
+      if (harmonic > 3000) return;
       
       const oscillator = this.audioContext.createOscillator();
       const gainNode = this.audioContext.createGain();
       
-      // Use different waveforms for different harmonics
-      const waveforms: OscillatorType[] = ['sine', 'triangle', 'sawtooth', 'square'];
-      oscillator.type = index === 0 ? 'sine' : waveforms[index % waveforms.length];
+      // Use guitar-like waveforms (more triangle and sawtooth for brightness)
+      const guitarWaveforms: OscillatorType[] = ['triangle', 'sawtooth', 'triangle', 'sine'];
+      oscillator.type = guitarWaveforms[index % guitarWaveforms.length];
       oscillator.frequency.setValueAtTime(harmonic, now);
       
-      // Decrease volume for higher harmonics
-      const volume = 0.3 / (index + 1);
+      // Guitar-like volume distribution (fundamental strong, harmonics progressively weaker)
+      const volumes = [0.4, 0.25, 0.15, 0.1]; // Guitar-like harmonic balance
+      const volume = volumes[index] || (0.4 / (index + 1));
+      
       gainNode.gain.setValueAtTime(0, now);
-      gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
+      gainNode.gain.linearRampToValueAtTime(volume, now + 0.005); // Quick attack like guitar
       gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
       
       oscillator.connect(gainNode);

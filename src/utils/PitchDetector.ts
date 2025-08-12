@@ -7,12 +7,77 @@ export class PitchDetector {
   private stream: MediaStream | null = null;
   private bufferLength: number = 2048;
   private buffer: Float32Array;
+  private frequencyBuffer: Uint8Array;
   private isListening: boolean = false;
   private animationId: number | null = null;
+  
+  // Voice frequency range constants
+  private readonly VOICE_MIN_FREQ = 70;    // Lowest human voice frequency
+  private readonly VOICE_MAX_FREQ = 1100;  // Highest human voice frequency
+  private readonly VOICE_SWEET_SPOT_MIN = 85;  // Most common voice range start
+  private readonly VOICE_SWEET_SPOT_MAX = 800; // Most common voice range end
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     this.buffer = new Float32Array(this.bufferLength);
+    this.frequencyBuffer = new Uint8Array(this.bufferLength);
+  }
+
+  private isVoiceFrequency(frequency: number, frequencyData: Uint8Array): boolean {
+    // First check if frequency is in human voice range
+    if (frequency < this.VOICE_MIN_FREQ || frequency > this.VOICE_MAX_FREQ) {
+      return false;
+    }
+    
+    // Boost confidence for frequencies in the sweet spot
+    const isInSweetSpot = frequency >= this.VOICE_SWEET_SPOT_MIN && frequency <= this.VOICE_SWEET_SPOT_MAX;
+    
+    // Analyze spectral characteristics typical of human voice
+    const sampleRate = this.audioContext.sampleRate;
+    const fftSize = frequencyData.length;
+    const freqBinSize = sampleRate / (fftSize * 2);
+    
+    const fundamentalBin = Math.round(frequency / freqBinSize);
+    const harmonic2Bin = Math.round((frequency * 2) / freqBinSize);
+    const harmonic3Bin = Math.round((frequency * 3) / freqBinSize);
+    
+    if (fundamentalBin >= fftSize || harmonic2Bin >= fftSize) return isInSweetSpot;
+    
+    // Check for harmonic structure typical of voice
+    // Convert Uint8Array values to normalized float values (0-255 to 0-1)
+    const fundamentalMag = frequencyData[fundamentalBin] / 255.0;
+    const harmonic2Mag = harmonic2Bin < fftSize ? frequencyData[harmonic2Bin] / 255.0 : 0;
+    const harmonic3Mag = harmonic3Bin < fftSize ? frequencyData[harmonic3Bin] / 255.0 : 0;
+    
+    // Voice typically has strong fundamental with decreasing harmonics
+    // Guitar harmonics often have more complex/irregular patterns
+    const hasVoicePattern = (
+      fundamentalMag > 0.1 && // Strong fundamental
+      (harmonic2Mag < fundamentalMag * 0.8) && // Second harmonic weaker
+      (harmonic3Mag < fundamentalMag * 0.6)   // Third harmonic even weaker
+    );
+    
+    // Additional check for formant frequencies (characteristic of voice)
+    // Human voice has formants around 500-3000Hz range
+    let formantEnergy = 0;
+    const formantStart = Math.round(500 / freqBinSize);
+    const formantEnd = Math.round(2500 / freqBinSize);
+    
+    for (let i = formantStart; i < Math.min(formantEnd, fftSize); i++) {
+      formantEnergy += frequencyData[i] / 255.0; // Normalize Uint8Array values
+    }
+    
+    const avgFormantEnergy = formantEnergy / (formantEnd - formantStart);
+    const hasFormantActivity = avgFormantEnergy > 0.05; // Threshold for formant presence
+    
+    // Guitar typically lacks strong formant structure in voice range
+    const confidenceScore = (
+      (hasVoicePattern ? 0.4 : 0) +
+      (isInSweetSpot ? 0.3 : 0) +
+      (hasFormantActivity ? 0.3 : 0)
+    );
+    
+    return confidenceScore >= 0.5;
   }
 
   findClosestNote(frequency: number): { note: string, cents: number, noteFrequency: number } | null {
@@ -110,8 +175,18 @@ export class PitchDetector {
         audio: {
           echoCancellation: true,
           autoGainControl: true,
-          noiseSuppression: true
-        }
+          noiseSuppression: true,
+          // Additional constraints to optimize for voice
+          sampleRate: 44100,
+          channelCount: 1, // Mono for better voice focus
+          volume: 1.0,
+          // Some browsers support these additional voice optimizations
+          googEchoCancellation: true,
+          googAutoGainControl: true,
+          googNoiseSuppression: true,
+          googHighpassFilter: true,
+          googTypingNoiseDetection: true
+        } as any // Type assertion for extended properties
       });
 
       this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.stream);
@@ -124,7 +199,9 @@ export class PitchDetector {
       const updatePitch = () => {
         if (!this.isListening || !this.analyser) return;
 
+        // Get both time domain and frequency domain data
         this.analyser.getFloatTimeDomainData(this.buffer);
+        this.analyser.getByteFrequencyData(this.frequencyBuffer);
         
         // Check if we're getting audio data
         let maxVal = 0;
@@ -137,16 +214,18 @@ export class PitchDetector {
         const frequency = this.autoCorrelate(this.buffer, this.audioContext.sampleRate);
 
         const pitchData: PitchData = {
-          frequency: frequency > 0 ? frequency : 0,
+          frequency: 0,
           note: null,
           noteString: null,
           cents: null,
           buffer: this.buffer.slice()
         };
 
-        if (frequency > 0) {
+        // Only proceed if we detect a valid frequency and it's likely a voice
+        if (frequency > 0 && this.isVoiceFrequency(frequency, this.frequencyBuffer)) {
           const closestNoteData = this.findClosestNote(frequency);
           if (closestNoteData) {
+            pitchData.frequency = frequency;
             pitchData.note = null; // We don't use note number anymore
             pitchData.noteString = closestNoteData.note; // This is the full note name with octave
             pitchData.cents = closestNoteData.cents;

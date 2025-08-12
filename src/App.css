@@ -107,7 +107,7 @@ body {
 
 .vocal-game-container {
   width: 100%;
-  max-width: 1200px; /* Limit maximum width */
+  max-width: 1400px; /* Increased maximum width for larger screens */
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -262,6 +262,7 @@ body {
   border: 2px solid #dee2e6;
   border-radius: 8px;
   background-color: white;
+  min-height: 300px; /* Ensure minimum height on all screens */
 }
 
 .game-content {
@@ -546,6 +547,7 @@ body {
     height: 100vh;
     overflow: hidden;
     max-width: none; /* Full width on mobile */
+    min-height: 400px; /* Ensure minimum height for content visibility */
   }
   
   .game-header {
@@ -579,7 +581,7 @@ body {
 /* Tablet styles (641px to 1024px) */
 @media (min-width: 641px) {
   .vocal-game-container {
-    max-width: 900px; /* Smaller max-width for tablets */
+    max-width: 1100px; /* Increased max-width for tablets */
     padding: 0.75rem;
   }
   
@@ -682,7 +684,7 @@ body {
 /* Desktop styles (1025px and above) */
 @media (min-width: 1025px) {
   .vocal-game-container {
-    max-width: 1000px; /* Reasonable max-width for desktop */
+    max-width: 1400px; /* Increased max-width for desktop */
     padding: 1rem;
   }
   
@@ -786,6 +788,19 @@ body {
   .left-sidebar {
     width: 400px;
   }
+
+  .vocal-game-container {
+    max-width: 1600px; /* Even larger for very large screens */
+    padding: 1.5rem;
+  }
+}
+
+/* Extra large screens (1920px and above) */
+@media (min-width: 1920px) {
+  .vocal-game-container {
+    max-width: 1800px; /* Maximum size for ultra-wide screens */
+    padding: 2rem;
+  }
 }
 
 /* Landscape orientation for mobile */
@@ -803,27 +818,85 @@ body {
   }
 
   .left-sidebar {
-    width: 45%;
+    width: 28%; /* Reduced from 45% to give more space to game */
     max-height: 100%;
     min-height: 100%;
+    padding: 0.5rem; /* Reduced padding for landscape */
+  }
+
+  .left-menu h2 {
+    font-size: 0.9rem;
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
+
+  .notes-textarea {
+    font-size: 0.75rem;
+    min-height: 40px;
+    padding: 0.4rem;
+  }
+
+  .input-label {
+    font-size: 0.8rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .set-notes-button,
+  .reset-button {
+    font-size: 0.7rem;
+    padding: 0.4rem 0.6rem;
+    min-height: 32px;
+  }
+
+  .button-group {
+    gap: 0.3rem;
+    margin-top: 0.5rem;
   }
 
   .frequency-box {
-    padding: 0.5rem;
+    padding: 0.3rem;
+    min-height: 50px;
+    height: 50px;
   }
 
   .frequency-box h3 {
-    font-size: 0.8rem;
-    margin-bottom: 0.25rem;
+    font-size: 0.65rem;
+    margin-bottom: 0.1rem;
   }
 
   .note-value {
-    font-size: 1rem;
+    font-size: 0.8rem;
+    margin: 0.1rem 0;
   }
 
   .frequency-value {
-    font-size: 0.9rem;
-    margin: 0.25rem 0;
+    font-size: 0.7rem;
+    margin: 0.1rem 0;
+  }
+
+  .cents-value {
+    font-size: 0.6rem;
+    margin-top: 0.15rem;
+  }
+
+  .no-target, .no-signal {
+    font-size: 0.6rem;
+    line-height: 1.2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 68px;
+  }
+
+  .frequency-display {
+    gap: 0.5rem;
+  }
+
+  .main-content {
+    flex: 1; /* Takes remaining space after 28% sidebar */
+    display: flex;
+    padding: 0;
+    overflow: hidden;
   }
   
   /* Game Mode Landscape Responsiveness */

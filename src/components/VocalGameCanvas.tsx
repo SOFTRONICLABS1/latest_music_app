@@ -5,6 +5,7 @@ import type { GameNote } from './DuckVoiceGameSDK';
 
 interface VocalGameCanvasProps {
   onClose: () => void;
+  onGameStateChange?: (isPlaying: boolean) => void;
   notes?: string[];
   noteDurations?: number[];
   bpm?: number;
@@ -16,6 +17,7 @@ interface VocalGameCanvasProps {
 
 export const VocalGameCanvas: React.FC<VocalGameCanvasProps> = ({ 
   onClose, 
+  onGameStateChange,
   notes = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'],
   noteDurations = [0, 0, 0, 0, 0, 0, 0, 0],
   bpm = 120,
@@ -75,6 +77,7 @@ export const VocalGameCanvas: React.FC<VocalGameCanvasProps> = ({
               if (gameRef.current?.play) {
                 try {
                   await gameRef.current.play();
+                  onGameStateChange?.(true);
                 } catch (error) {
                   console.error('Failed to start game:', error);
                 }
@@ -85,19 +88,28 @@ export const VocalGameCanvas: React.FC<VocalGameCanvasProps> = ({
           </button>
           <button 
             className="game-control-btn pause-btn"
-            onClick={() => gameRef.current?.pause()}
+            onClick={() => {
+              gameRef.current?.pause();
+              onGameStateChange?.(false);
+            }}
           >
             ⏸️ Pause
           </button>
           <button 
             className="game-control-btn stop-btn"
-            onClick={() => gameRef.current?.stop()}
+            onClick={() => {
+              gameRef.current?.stop();
+              onGameStateChange?.(false);
+            }}
           >
             ⏹️ Stop
           </button>
           <button 
             className="game-control-btn restart-btn"
-            onClick={() => gameRef.current?.restart()}
+            onClick={async () => {
+              gameRef.current?.restart();
+              onGameStateChange?.(true);
+            }}
           >
             🔄 Restart
           </button>
