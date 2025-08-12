@@ -3,6 +3,7 @@ import './App.css';
 import { LeftMenu } from './components/LeftMenu';
 import { FrequencyDisplay } from './components/FrequencyDisplay';
 import { WaveformCanvas } from './components/WaveformCanvas';
+import { VocalGameCanvas } from './components/VocalGameCanvas';
 import { PitchDetector } from './utils/PitchDetector';
 import type { PitchData } from './utils/PitchDetector';
 
@@ -18,6 +19,7 @@ function App() {
   const [bpm, setBpm] = useState<number>(60);
   const [isPlaying, setIsPlaying] = useState(false);
   const [resetTrigger, setResetTrigger] = useState(0);
+  const [isGameMode, setIsGameMode] = useState(false);
   const pitchDetectorRef = useRef<PitchDetector | null>(null);
 
   useEffect(() => {
@@ -73,8 +75,49 @@ function App() {
               <option value={120}>120</option>
             </select>
           </div>
-          <button 
-            className={`play-button ${isPlaying ? 'playing' : ''}`}
+          <button
+            className="game-mode-button"
+            onClick={async () => {
+              if (!isGameMode) {
+                // Entering game mode - start listening
+                setIsGameMode(true);
+                if (!isListening) {
+                  try {
+                    await pitchDetectorRef.current?.startListening(handlePitchData);
+                    setIsListening(true);
+                  } catch (error: any) {
+                    console.error('Failed to start listening in game mode:', error);
+                    setIsGameMode(false); // Revert if listening fails
+                    let errorMessage = 'Failed to access microphone. ';
+                    if (error.name === 'NotAllowedError') {
+                      errorMessage += 'Please allow microphone access in your browser settings.';
+                    } else if (error.name === 'NotFoundError') {
+                      errorMessage += 'No microphone found. Please connect a microphone.';
+                    } else {
+                      errorMessage += 'Error: ' + error.message;
+                    }
+                    alert(errorMessage);
+                  }
+                }
+              } else {
+                // Exiting game mode - stop listening if it was started by game mode
+                setIsGameMode(false);
+                if (isListening && !isPlaying) {
+                  pitchDetectorRef.current?.stopListening();
+                  setIsListening(false);
+                  setCurrentFrequency(0);
+                  setCurrentNote(null);
+                  setCurrentCents(null);
+                  setWaveformBuffer(null);
+                }
+              }
+            }}
+          >
+            {isGameMode ? 'Exit Game' : 'Game Mode'}
+          </button>
+          {!isGameMode && (
+            <button 
+              className={`play-button ${isPlaying ? 'playing' : ''}`}
             onClick={async () => {
               if (!isPlaying) {
                 // Start playing and automatically start listening
@@ -113,6 +156,7 @@ function App() {
           >
             {isPlaying ? 'Stop' : 'Start'}
           </button>
+          )}
           {/* <button 
             className={`listen-button ${isListening ? 'listening' : ''}`}
             onClick={toggleListening}
@@ -134,23 +178,37 @@ function App() {
               currentFrequency={currentFrequency}
               currentNote={currentNote}
               currentCents={currentCents}
+              isGameMode={isGameMode}
             />
           </div>
         </aside>
         
         <main className="main-content">
-          <WaveformCanvas
-            notes={notes}
-            noteDurations={noteDurations}
-            buffer={waveformBuffer}
-            currentFrequency={currentFrequency}
-            targetNotes={notes}
-            bpm={bpm}
-            isPlaying={isPlaying}
-            isListening={isListening}
-            onNoteChange={setCurrentNoteIndex}
-            resetTrigger={resetTrigger}
-          />
+          {isGameMode ? (
+            <VocalGameCanvas 
+              onClose={() => setIsGameMode(false)}
+              notes={notes}
+              noteDurations={noteDurations}
+              bpm={bpm}
+              currentFrequency={currentFrequency}
+              currentNote={currentNote}
+              currentCents={currentCents}
+              targetNote={notes[currentNoteIndex] || null}
+            />
+          ) : (
+            <WaveformCanvas
+              notes={notes}
+              noteDurations={noteDurations}
+              buffer={waveformBuffer}
+              currentFrequency={currentFrequency}
+              targetNotes={notes}
+              bpm={bpm}
+              isPlaying={isPlaying}
+              isListening={isListening}
+              onNoteChange={setCurrentNoteIndex}
+              resetTrigger={resetTrigger}
+            />
+          )}
         </main>
       </div>
     </div>

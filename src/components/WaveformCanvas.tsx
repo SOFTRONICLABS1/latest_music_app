@@ -97,8 +97,9 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
   // Calculate Y position for a frequency using expanded range
   const getYPosition = (frequency: number, canvasHeight: number): number => {
+    console.log(buffer)
     if (!frequency || displayNotes.length === 0) return canvasHeight / 2;
-      console.log(buffer)
+
     // Use display notes (expanded range) for Y position calculation
     const frequencies = displayNotes
       .map((n) => NOTE_FREQUENCIES[n])
@@ -245,8 +246,6 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
       // Calculate how many complete sequences we need to draw to fill the canvas
       // Add extra sequences to ensure smooth infinite scrolling
-      const visibleWidth = canvas.width + 200; // Add buffer for smooth edges
-      const sequencesNeeded = Math.ceil(visibleWidth / sequencePixels) + 3;
 
       // Draw continuous sequences with stable rendering
       // Calculate sequences needed to fill the entire canvas from right to left
@@ -254,30 +253,10 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       const startSeq = -1; // Start before the visible area
       const endSeq = startSeq + sequencesNeededForFullCanvas;
 
-      // Calculate responsive starting offset based on screen width with detailed ranges
-      // Extra Large Desktop (>1920px): 3500px
-      // Large Desktop (>1440px && <=1920px): 2800px
-      // Desktop (>1200px && <=1440px): 2200px
-      // Large Tablet (>926px && <=1200px): 1800px
-      // Tablet (>768px && <=926px): 1400px
-      // Large Mobile Landscape (>667px && <=768px): 1000px
-      // Mobile Landscape (>568px && <=667px): 800px
-      // Large Mobile Portrait (>414px && <=568px): 600px
-      // Mobile Portrait (<=414px): 400px
-      const startingOffset = canvas.width > 1920 ? 2800 :
-                             canvas.width > 1440 && canvas.width <= 1920 ? 2800 :
-                             canvas.width > 1200 && canvas.width <= 1440 ? 2200 :
-                             canvas.width > 926 && canvas.width <= 1200 ? 1800 :
-                             canvas.width > 768 && canvas.width <= 926 ? 1600 :
-                             canvas.width > 667 && canvas.width <= 768 ? 1000 :
-                             canvas.width > 568 && canvas.width <= 667 ? 800 :
-                             canvas.width > 414 && canvas.width <= 568 ? 1600 :
-                             400;
-      
       for (let seq = startSeq; seq < endSeq; seq++) {
         // Calculate the base position for this sequence repetition
-        // Start from responsive offset and move to the left
-        const sequenceBaseX = startingOffset - scrollPosition + (seq * sequencePixels);
+        // The first sequence (seq=0) should start at canvas.width when scrollPosition=0
+        const sequenceBaseX = canvas.width + (seq * sequencePixels) - scrollPosition;
 
         // Draw each note in the sequence
         let cumulativeX = 0;
