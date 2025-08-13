@@ -212,6 +212,7 @@ function App() {
               isListening={isListening}
               onNoteChange={setCurrentNoteIndex}
               resetTrigger={resetTrigger}
+              isGameMode={isGameMode}
             />
           )}
         </main>

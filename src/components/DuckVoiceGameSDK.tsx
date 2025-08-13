@@ -2,6 +2,7 @@ import React, { Component, forwardRef } from 'react';
 import './DuckVoiceGameSDK.css';
 import { PitchDetector, type PitchData } from './utils/PitchDetector';
 import { SoundSynthesis } from './utils/SoundSynthesis';
+import { GuitarHarmonics } from '../utils/GuitarHarmonics';
 import { NOTE_FREQUENCIES } from './constants/notes';
 // Import your PNG images here
 import flappyBirdImage from './assets/flappy-bird.png';
@@ -87,6 +88,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
   private groundLevel: number;
   private pitchDetector: PitchDetector;
   private soundSynthesis: SoundSynthesis;
+  private guitarHarmonics: GuitarHarmonics;
   // private animationId: number | null = null;
   private gameLoopId: number | null = null;
   private gravityLoopId: number | null = null;
@@ -142,6 +144,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     
     this.pitchDetector = new PitchDetector();
     this.soundSynthesis = new SoundSynthesis();
+    this.guitarHarmonics = new GuitarHarmonics();
   }
 
   componentDidMount(): void {
@@ -678,9 +681,12 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
             console.log('Game playing:', prevState.gameState === 'playing');
             console.log('Harmonics enabled:', prevState.harmonicsEnabled);
             
-            if (this.soundSynthesis && prevState.gameState === 'playing' && prevState.harmonicsEnabled) {
-              console.log('Playing harmonic chord for:', newBar.frequency, 'Hz');
-              this.soundSynthesis.playHarmonicChord(newBar.frequency, 0.8);
+            if (this.guitarHarmonics && prevState.gameState === 'playing' && prevState.harmonicsEnabled) {
+              console.log('Playing guitar harmonic for note:', newBar.note, newBar.frequency, 'Hz');
+              // Calculate duration based on BPM - similar to WaveformCanvas logic
+              const secondsPerBeat = 60 / this.bpm;
+              const duration = newBar.duration || (secondsPerBeat * 1000);
+              this.guitarHarmonics.playNote(newBar.note, duration);
             }
             newBar.hasPlayedHarmonic = true;
             
@@ -759,7 +765,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
   getSpawnInterval = (noteIndex: number): number => {
     // Calculate spawn interval based on the actual spacing between notes
     if (noteIndex === 0) {
-      return 1000; // First note spawns after 1 second
+      return 200; // First note spawns quickly
     }
     
     // Get the time difference between current and previous note
@@ -767,7 +773,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     const prevNote = this.notes[noteIndex - 1];
     
     if (!currentNote || !prevNote) {
-      return 2000; // Default 2 seconds if note data is missing
+      return 500; // Reduced default if note data is missing
     }
     
     // Calculate actual durations
@@ -785,7 +791,7 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     // Total time is previous duration + gap time
     const totalTime = prevDuration + Math.max(minGapTime, barTimeInSeconds * 0.2);
     
-    return Math.max(totalTime * 1000, 800); // Convert to milliseconds, minimum 800ms
+    return Math.max(totalTime * 1000, 300); // Convert to milliseconds, minimum 300ms
   };
 
   spawnBars = (): void => {
@@ -831,8 +837,9 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
         
         console.log(`Starting cycle ${currentCycleNumber + 1}`);
         
-        // Start next cycle after a brief pause
-        this.noteSpawnTimer = window.setTimeout(scheduleNextNote, 2000);
+        // Start next cycle after a brief pause - shorter gap for higher BPM
+        const cycleGap = Math.max(50, 300 - (this.bpm * 1.5)); // Inversely proportional to BPM
+        this.noteSpawnTimer = window.setTimeout(scheduleNextNote, cycleGap);
       }
     };
     
@@ -843,17 +850,13 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
   play = async (hz?: number, notes?: GameNote[]): Promise<void> => {
     if (this.state.gameState === 'playing') return;
     
-    // Resume audio context for harmonics
-    if (this.soundSynthesis) {
+    // Resume audio context for guitar harmonics
+    if (this.guitarHarmonics) {
       try {
-        // Access the audioContext from SoundSynthesis and resume it
-        const audioContext = (this.soundSynthesis as any).audioContext;
-        if (audioContext && audioContext.state === 'suspended') {
-          await audioContext.resume();
-          console.log('AudioContext resumed for harmonics');
-        }
+        await this.guitarHarmonics.resume();
+        console.log('AudioContext resumed for guitar harmonics');
       } catch (error) {
-        console.error('Failed to resume audio context:', error);
+        console.error('Failed to resume audio context for guitar harmonics:', error);
       }
     }
     
@@ -917,6 +920,11 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       this.pitchDetector.stopListening();
     }
     
+    // Stop all guitar harmonics
+    if (this.guitarHarmonics) {
+      this.guitarHarmonics.stopAll();
+    }
+    
     // Force a state update to clear everything
     this.setState({
       gameState: 'stopped',
@@ -975,15 +983,12 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
 
   toggleHarmonics = async (): Promise<void> => {
     // Resume audio context if needed before testing
-    if (this.soundSynthesis) {
+    if (this.guitarHarmonics) {
       try {
-        const audioContext = (this.soundSynthesis as any).audioContext;
-        if (audioContext && audioContext.state === 'suspended') {
-          await audioContext.resume();
-          console.log('AudioContext resumed for harmonics toggle');
-        }
+        await this.guitarHarmonics.resume();
+        console.log('AudioContext resumed for guitar harmonics toggle');
       } catch (error) {
-        console.error('Failed to resume audio context:', error);
+        console.error('Failed to resume audio context for guitar harmonics:', error);
       }
     }
     
@@ -991,9 +996,9 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
       const newHarmonicsState = !prevState.harmonicsEnabled;
       
       // Test harmonics when enabling
-      if (newHarmonicsState && this.soundSynthesis) {
-        console.log('Testing harmonics with 440Hz tone...');
-        this.soundSynthesis.playTone(440, 0.3, 'sine'); // Test A4 note
+      if (newHarmonicsState && this.guitarHarmonics) {
+        console.log('Testing guitar harmonics with A4 note...');
+        this.guitarHarmonics.playNote('A4', 300); // Test A4 note for 300ms
       }
       
       return {

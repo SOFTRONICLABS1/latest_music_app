@@ -13,6 +13,7 @@ interface WaveformCanvasProps {
   isListening: boolean;
   onNoteChange: (index: number) => void;
   resetTrigger?: number;
+  isGameMode?: boolean;
 }
 
 interface WavePoint {
@@ -34,6 +35,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   isListening,
   onNoteChange,
   resetTrigger,
+  isGameMode = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | undefined>(undefined);
@@ -292,8 +294,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
               const uniqueNoteId = `${seq}-${i}-${note}`;
 
               onNoteChange(actualIndex);
-              // Play guitar harmonic for this note
-              if (guitarHarmonicsRef.current) {
+              // Play guitar harmonic for this note only when not in game mode
+              if (guitarHarmonicsRef.current && !isGameMode) {
                 const currentTime = Date.now();
                 // Check if we haven't played this specific note instance recently
                 if (
