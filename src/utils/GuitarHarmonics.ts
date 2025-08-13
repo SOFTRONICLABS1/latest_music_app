@@ -9,21 +9,20 @@ export class GuitarHarmonics {
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     this.masterGain = this.audioContext.createGain();
-    this.masterGain.gain.value = 0.3; // Master volume
+    this.masterGain.gain.value = 0.2; // Soothing master volume
     this.masterGain.connect(this.audioContext.destination);
   }
 
   private createGuitarHarmonic(frequency: number, duration: number): void {
     const now = this.audioContext.currentTime;
     
-    // Create multiple harmonics for richer guitar-like sound
+    // Create multiple harmonics for soothing, melodic sound
     const harmonicRatios = [
-      { ratio: 1, gain: 0.5 },     // Fundamental
-      { ratio: 2, gain: 0.3 },     // Octave
-      { ratio: 3, gain: 0.15 },    // Fifth above octave
-      { ratio: 4, gain: 0.08 },    // Two octaves
-      { ratio: 5, gain: 0.05 },    // Major third above two octaves
-      { ratio: 6, gain: 0.03 }     // Fifth above two octaves
+      { ratio: 1, gain: 0.6 },     // Fundamental (stronger for melody)
+      { ratio: 2, gain: 0.25 },    // Octave (softer)
+      { ratio: 3, gain: 0.1 },     // Fifth above octave (subtle)
+      { ratio: 4, gain: 0.05 },    // Two octaves (very soft)
+      { ratio: 0.5, gain: 0.15 }   // Sub-octave (adds warmth)
     ];
 
     harmonicRatios.forEach(harmonic => {
@@ -35,18 +34,18 @@ export class GuitarHarmonics {
       // Create gain node for this harmonic
       const gainNode = this.audioContext.createGain();
       
-      // Guitar-like envelope (fast attack, gradual decay)
+      // Soothing envelope (gentle attack, sustained melody)
       gainNode.gain.setValueAtTime(0, now);
-      gainNode.gain.linearRampToValueAtTime(harmonic.gain, now + 0.01); // Fast attack
-      gainNode.gain.exponentialRampToValueAtTime(harmonic.gain * 0.5, now + 0.1); // Initial decay
-      gainNode.gain.exponentialRampToValueAtTime(harmonic.gain * 0.2, now + duration * 0.5 / 1000); // Sustain decay
-      gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration / 1000); // Full decay
+      gainNode.gain.linearRampToValueAtTime(harmonic.gain, now + 0.1); // Gentle attack
+      gainNode.gain.exponentialRampToValueAtTime(harmonic.gain * 0.8, now + 0.2); // Minimal initial decay
+      gainNode.gain.exponentialRampToValueAtTime(harmonic.gain * 0.6, now + duration * 0.7 / 1000); // Long sustain
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration / 1000 + 0.2); // Gentle fade out
 
-      // Add slight vibrato for realism
+      // Add subtle vibrato for soothing effect
       const vibrato = this.audioContext.createOscillator();
-      vibrato.frequency.value = 5; // 5Hz vibrato
+      vibrato.frequency.value = 3; // Slower 3Hz vibrato for soothing effect
       const vibratoGain = this.audioContext.createGain();
-      vibratoGain.gain.value = frequency * harmonic.ratio * 0.01; // 1% pitch variation
+      vibratoGain.gain.value = frequency * harmonic.ratio * 0.005; // 0.5% pitch variation (subtler)
       
       vibrato.connect(vibratoGain);
       vibratoGain.connect(oscillator.frequency);
@@ -58,8 +57,8 @@ export class GuitarHarmonics {
       // Start and stop
       oscillator.start(now);
       vibrato.start(now);
-      oscillator.stop(now + duration / 1000 + 0.5); // Add 0.5s for natural decay
-      vibrato.stop(now + duration / 1000 + 0.5);
+      oscillator.stop(now + duration / 1000 + 0.4); // Extended for gentle fade
+      vibrato.stop(now + duration / 1000 + 0.4);
       
       // Store references for cleanup
       this.currentOscillators.push(oscillator, vibrato);

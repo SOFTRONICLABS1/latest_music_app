@@ -68,6 +68,8 @@ export interface DuckVoiceGameSDKProps {
   bpm: number;
   notes: GameNote[];
   mode?: 'easy' | 'medium' | 'hard';
+  currentFrequency?: number;
+  currentNote?: string | null;
 }
 
 export interface DuckImageProps {
@@ -154,6 +156,29 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
     // Add resize listener for orientation changes
     window.addEventListener('resize', this.handleResize);
   }
+
+  componentDidUpdate(prevProps: DuckVoiceGameSDKProps): void {
+    // Handle external frequency changes
+    if (this.props.currentFrequency !== prevProps.currentFrequency && 
+        this.props.currentFrequency !== undefined) {
+      this.handleExternalFrequency(this.props.currentFrequency);
+    }
+  }
+
+  handleExternalFrequency = (frequency: number): void => {
+    // Use external frequency for duck positioning when available
+    if (this.state.gameState === 'playing') {
+      const pitchData = { 
+        frequency, 
+        note: null, 
+        noteString: null, 
+        cents: null, 
+        buffer: new Float32Array(),
+        volume: frequency > 20 ? 0.5 : 0  // Add volume as extended property
+      } as any;
+      this.handlePitchData(pitchData);
+    }
+  };
 
   componentWillUnmount(): void {
     this.stop();
@@ -741,15 +766,24 @@ class DuckVoiceGameSDKComponent extends Component<DuckVoiceGameSDKProps, GameSta
         
         // Find the note currently at the bird line (like blue line in WaveformCanvas)
         let currentNoteAtBirdLine = prevState.currentNoteIndex;
+        let closestBarDistance = Infinity;
         
-        // Check which note is currently at the bird line
+        // Find the bar that's closest to the bird line center (most actively highlighted)
         updatedBars.forEach(bar => {
           const barLeft = bar.x;
           const barRight = bar.x + (bar.width || 100);
+          const barCenter = (barLeft + barRight) / 2;
           
-          // If this bar is crossing or at the bird line, it's the current active note
+          // If this bar is overlapping with the bird line
           if (barLeft <= birdLineX && barRight >= birdLineX && bar.originalIndex !== undefined) {
-            currentNoteAtBirdLine = bar.originalIndex % this.notes.length;
+            // Calculate how close the bar center is to the bird line
+            const distance = Math.abs(barCenter - birdLineX);
+            
+            // Choose the bar whose center is closest to the bird line
+            if (distance < closestBarDistance) {
+              closestBarDistance = distance;
+              currentNoteAtBirdLine = bar.originalIndex % this.notes.length;
+            }
           }
         });
         

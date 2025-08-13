@@ -179,7 +179,6 @@ function App() {
               currentFrequency={currentFrequency}
               currentNote={currentNote}
               currentCents={currentCents}
-              isGameMode={isGameMode}
             />
           </div>
         </aside>
@@ -192,6 +191,14 @@ function App() {
                 setIsGamePlaying(false);
               }}
               onGameStateChange={setIsGamePlaying}
+              onTargetNoteChange={(targetNote) => {
+                if (targetNote) {
+                  const noteIndex = notes.findIndex(note => note === targetNote);
+                  if (noteIndex !== -1) {
+                    setCurrentNoteIndex(noteIndex);
+                  }
+                }
+              }}
               notes={notes}
               noteDurations={noteDurations}
               bpm={bpm}

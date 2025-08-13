@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { NOTE_FREQUENCIES } from "../constants/notes";
+import { KANNADA_SONG_MELODY, TWINKLE_TWINKLE_MELODY } from "./constants/kannadaMelody";
 import { useIsMobileOrTablet } from "../hooks/useMediaQuery";
 
 interface LeftMenuProps {
@@ -119,6 +120,41 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
     setTimeout(() => setErrorMessage(""), 2000);
   };
 
+  // Helper function to convert melody to input string format
+  const melodyToString = (melody: typeof KANNADA_SONG_MELODY) => {
+    return melody.map(note => `${note.note}:${note.duration}`).join(', ');
+  };
+
+  // Handle Twinkle Twinkle melody
+  const handleTwinkleTwinkle = () => {
+    const melodyString = melodyToString(TWINKLE_TWINKLE_MELODY);
+    setInputValue(melodyString);
+    
+    const notes = TWINKLE_TWINKLE_MELODY.map(m => m.note);
+    const durations = TWINKLE_TWINKLE_MELODY.map(m => m.duration);
+    
+    setCurrentNotes(notes);
+    setCurrentDurations(durations);
+    onNotesChange(notes, durations, true);
+    setErrorMessage("Loaded Twinkle Twinkle Little Star melody");
+    setTimeout(() => setErrorMessage(""), 2000);
+  };
+
+  // Handle Kannada melody
+  const handleKannadaMelody = () => {
+    const melodyString = melodyToString(KANNADA_SONG_MELODY);
+    setInputValue(melodyString);
+    
+    const notes = KANNADA_SONG_MELODY.map(m => m.note);
+    const durations = KANNADA_SONG_MELODY.map(m => m.duration);
+    
+    setCurrentNotes(notes);
+    setCurrentDurations(durations);
+    onNotesChange(notes, durations, true);
+    setErrorMessage("Loaded Jenina Holeyu Kannada melody");
+    setTimeout(() => setErrorMessage(""), 2000);
+  };
+
   const shouldHideInput = isMobileOrTablet && isPlaying;
   const shouldHideInLandscape = isGameMode && window.innerWidth > window.innerHeight && window.innerHeight <= 500;
   const shouldHideInGamePlayingMobileLandscape = isGameMode && isGamePlaying && window.innerWidth > window.innerHeight && window.innerHeight <= 500;
@@ -153,6 +189,32 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
                   Reset to Default
                 </button>
               </div>
+
+              {isGameMode && (
+                <div className="melody-button-group" style={{ marginTop: '10px' }}>
+                  <button onClick={handleTwinkleTwinkle} className="melody-button" style={{ 
+                    backgroundColor: '#4CAF50', 
+                    color: 'white', 
+                    marginRight: '10px',
+                    padding: '8px 16px',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}>
+                    🌟 Twinkle Twinkle
+                  </button>
+                  <button onClick={handleKannadaMelody} className="melody-button" style={{ 
+                    backgroundColor: '#2196F3', 
+                    color: 'white',
+                    padding: '8px 16px',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}>
+                    🎵 Jenina Holeyu
+                  </button>
+                </div>
+              )}
 
               {errorMessage && (
                 <div

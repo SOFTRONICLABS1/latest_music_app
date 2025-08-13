@@ -5,7 +5,6 @@ interface FrequencyDisplayProps {
   currentFrequency: number;
   currentNote: string | null;
   currentCents: number | null;
-  isGameMode?: boolean;
 }
 
 export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({
@@ -13,7 +12,6 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({
   currentFrequency,
   currentNote,
   currentCents,
-  isGameMode = false,
 }) => {
   const targetFrequency = targetNote ? NOTE_FREQUENCIES[targetNote] : null;
 
@@ -33,7 +31,6 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({
 
   return (
     <div className="frequency-display">
-      {!isGameMode && (
         <div className="frequency-box target-box">
           <h3>Target</h3>
           {targetNote ? (
@@ -47,7 +44,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({
             <div className="no-target">No target selected</div>
           )}
         </div>
-      )}
+      
 
       <div className="frequency-box current-box">
         <h3>Your Performance</h3>
