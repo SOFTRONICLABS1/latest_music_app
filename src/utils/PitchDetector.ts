@@ -1,83 +1,28 @@
 import { NOTE_FREQUENCIES } from '../constants/notes';
+import { PitchDetector as Pitchy } from 'pitchy';
 
 export class PitchDetector {
   private audioContext: AudioContext;
   private analyser: AnalyserNode | null = null;
   private mediaStreamSource: MediaStreamAudioSourceNode | null = null;
   private stream: MediaStream | null = null;
-  private bufferLength: number = 2048;
+  private bufferLength: number = 4096; // Larger buffer for better accuracy
   private buffer: Float32Array;
-  private frequencyBuffer: Uint8Array;
   private isListening: boolean = false;
   private animationId: number | null = null;
-  
-  // Voice frequency range constants
-  private readonly VOICE_MIN_FREQ = 70;    // Lowest human voice frequency
-  private readonly VOICE_MAX_FREQ = 1100;  // Highest human voice frequency
-  private readonly VOICE_SWEET_SPOT_MIN = 85;  // Most common voice range start
-  private readonly VOICE_SWEET_SPOT_MAX = 800; // Most common voice range end
+  private frequencyHistory: number[] = [];
+  private confidenceHistory: number[] = [];
+  private readonly HISTORY_SIZE = 8; // Increased for smoother interpolation
+  private lastDetectionTime: number = 0;
+  private readonly PAUSE_THRESHOLD = 500; // Reduced for faster response
+  private pitchy: Pitchy<Float32Array> | null = null;
+  private interpolatedFrequency: number = 0;
+  private lastConfidentFrequency: number = 0;
+  private wasGap: boolean = false;
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     this.buffer = new Float32Array(this.bufferLength);
-    this.frequencyBuffer = new Uint8Array(this.bufferLength);
-  }
-
-  private isVoiceFrequency(frequency: number, frequencyData: Uint8Array): boolean {
-    // First check if frequency is in human voice range
-    if (frequency < this.VOICE_MIN_FREQ || frequency > this.VOICE_MAX_FREQ) {
-      return false;
-    }
-    
-    // Boost confidence for frequencies in the sweet spot
-    const isInSweetSpot = frequency >= this.VOICE_SWEET_SPOT_MIN && frequency <= this.VOICE_SWEET_SPOT_MAX;
-    
-    // Analyze spectral characteristics typical of human voice
-    const sampleRate = this.audioContext.sampleRate;
-    const fftSize = frequencyData.length;
-    const freqBinSize = sampleRate / (fftSize * 2);
-    
-    const fundamentalBin = Math.round(frequency / freqBinSize);
-    const harmonic2Bin = Math.round((frequency * 2) / freqBinSize);
-    const harmonic3Bin = Math.round((frequency * 3) / freqBinSize);
-    
-    if (fundamentalBin >= fftSize || harmonic2Bin >= fftSize) return isInSweetSpot;
-    
-    // Check for harmonic structure typical of voice
-    // Convert Uint8Array values to normalized float values (0-255 to 0-1)
-    const fundamentalMag = frequencyData[fundamentalBin] / 255.0;
-    const harmonic2Mag = harmonic2Bin < fftSize ? frequencyData[harmonic2Bin] / 255.0 : 0;
-    const harmonic3Mag = harmonic3Bin < fftSize ? frequencyData[harmonic3Bin] / 255.0 : 0;
-    
-    // Voice typically has strong fundamental with decreasing harmonics
-    // Guitar harmonics often have more complex/irregular patterns
-    const hasVoicePattern = (
-      fundamentalMag > 0.1 && // Strong fundamental
-      (harmonic2Mag < fundamentalMag * 0.8) && // Second harmonic weaker
-      (harmonic3Mag < fundamentalMag * 0.6)   // Third harmonic even weaker
-    );
-    
-    // Additional check for formant frequencies (characteristic of voice)
-    // Human voice has formants around 500-3000Hz range
-    let formantEnergy = 0;
-    const formantStart = Math.round(500 / freqBinSize);
-    const formantEnd = Math.round(2500 / freqBinSize);
-    
-    for (let i = formantStart; i < Math.min(formantEnd, fftSize); i++) {
-      formantEnergy += frequencyData[i] / 255.0; // Normalize Uint8Array values
-    }
-    
-    const avgFormantEnergy = formantEnergy / (formantEnd - formantStart);
-    const hasFormantActivity = avgFormantEnergy > 0.05; // Threshold for formant presence
-    
-    // Guitar typically lacks strong formant structure in voice range
-    const confidenceScore = (
-      (hasVoicePattern ? 0.4 : 0) +
-      (isInSweetSpot ? 0.3 : 0) +
-      (hasFormantActivity ? 0.3 : 0)
-    );
-    
-    return confidenceScore >= 0.5;
   }
 
   findClosestNote(frequency: number): { note: string, cents: number, noteFrequency: number } | null {
@@ -109,59 +54,146 @@ export class PitchDetector {
     };
   }
 
-  private autoCorrelate(buf: Float32Array, sampleRate: number): number {
-    const SIZE = buf.length;
-    let rms = 0;
-
-    for (let i = 0; i < SIZE; i++) {
-      const val = buf[i];
-      rms += val * val;
+  private detectPitch(buf: Float32Array, sampleRate: number): { frequency: number, clarity: number } {
+    // Initialize Pitchy detector if not already done
+    if (!this.pitchy) {
+      // Create Pitchy instance for Float32Array with buffer length
+      this.pitchy = Pitchy.forFloat32Array(buf.length);
+      // Professional-grade parameters for maximum accuracy
+      this.pitchy.clarityThreshold = 0.85; // Higher threshold for accuracy
+      this.pitchy.minVolumeDecibels = -40; // More sensitive volume detection
+      this.pitchy.maxInputAmplitude = 1.0; // Normalized amplitude
     }
-    rms = Math.sqrt(rms / SIZE);
-    if (rms < 0.01) return -1;
 
-    let r1 = 0, r2 = SIZE - 1;
-    const thres = 0.2;
-    for (let i = 0; i < SIZE / 2; i++) {
-      if (Math.abs(buf[i]) < thres) {
-        r1 = i;
-        break;
+    try {
+      // Use Pitchy's McLeod Pitch Method (MPM)
+      const [frequency, clarity] = this.pitchy.findPitch(buf, sampleRate);
+      
+      // More sophisticated confidence evaluation
+      if (frequency > 0) {
+        // Check if frequency is in musical range (human vocal range + instruments)
+        const isMusicalRange = frequency >= 80 && frequency <= 2000;
+        
+        // Adaptive clarity threshold based on frequency range
+        const adaptiveThreshold = frequency < 200 ? 0.75 : 0.85; // Lower notes can be harder to detect
+        
+        if (clarity >= adaptiveThreshold && isMusicalRange) {
+          return { frequency, clarity };
+        }
       }
+      
+      return { frequency: -1, clarity: clarity || 0 };
+    } catch (error) {
+      console.warn('Pitchy detection error:', error);
+      return { frequency: -1, clarity: 0 };
     }
-    for (let i = 1; i < SIZE / 2; i++) {
-      if (Math.abs(buf[SIZE - i]) < thres) {
-        r2 = SIZE - i;
-        break;
-      }
+  }
+
+  private correctOctaveError(frequency: number): number {
+    if (this.frequencyHistory.length < 3) return frequency;
+    
+    const recentFreq = this.getSmoothedFrequency();
+    const ratio = frequency / recentFreq;
+    
+    // Only apply octave correction for very obvious errors (tighter bounds)
+    // And only if the change is sudden (not gradual transitions)
+    const isGradualTransition = this.isGradualTransition(frequency);
+    
+    if (!isGradualTransition) {
+      // Very tight bounds for octave error correction
+      if (ratio > 1.95 && ratio < 2.05) return frequency / 2;  // Exact 2x
+      if (ratio > 0.495 && ratio < 0.505) return frequency * 2; // Exact 0.5x
+      if (ratio > 2.95 && ratio < 3.05) return frequency / 3;  // Exact 3x
+      if (ratio > 0.33 && ratio < 0.34) return frequency * 3;  // Exact 1/3x
     }
+    
+    return frequency;
+  }
 
-    const slicedBuf = buf.slice(r1, r2);
-    const newSize = slicedBuf.length;
-
-    const c = new Array(newSize).fill(0);
-    for (let i = 0; i < newSize; i++) {
-      for (let j = 0; j < newSize - i; j++) {
-        c[i] = c[i] + slicedBuf[j] * slicedBuf[j + i];
-      }
+  private isGradualTransition(_frequency: number): boolean {
+    if (this.frequencyHistory.length < 3) return true;
+    
+    // Check if the last few frequencies show a gradual trend
+    const recent = this.frequencyHistory.slice(-3);
+    
+    // Calculate if there's a consistent direction of change
+    const changes = [];
+    for (let i = 1; i < recent.length; i++) {
+      changes.push(recent[i] - recent[i-1]);
     }
+    
+    // If all changes are in the same direction and reasonably sized, it's gradual
+    const allPositive = changes.every(change => change > 0);
+    const allNegative = changes.every(change => change < 0);
+    const maxChange = Math.max(...changes.map(Math.abs));
+    
+    return (allPositive || allNegative) && maxChange < 200; // 200Hz max per frame
+  }
 
-    let d = 0;
-    while (c[d] > c[d + 1]) d++;
-    let maxval = -1, maxpos = -1;
-    for (let i = d; i < newSize; i++) {
-      if (c[i] > maxval) {
-        maxval = c[i];
-        maxpos = i;
-      }
+  private processFrequency(frequency: number, clarity: number): number {
+    // Store frequency and confidence data
+    this.frequencyHistory.push(frequency);
+    this.confidenceHistory.push(clarity);
+    
+    if (this.frequencyHistory.length > this.HISTORY_SIZE) {
+      this.frequencyHistory.shift();
+      this.confidenceHistory.shift();
     }
-    let T0 = maxpos;
+    
+    // High-confidence frequencies get immediate response
+    if (clarity >= 0.9) {
+      this.lastConfidentFrequency = frequency;
+      this.interpolatedFrequency = frequency;
+      return frequency;
+    }
+    
+    // For lower confidence, use confidence-weighted interpolation
+    if (this.frequencyHistory.length >= 3) {
+      return this.getConfidenceWeightedFrequency();
+    }
+    
+    // Fallback to current frequency for initial detections
+    return frequency;
+  }
 
-    const x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
-    const a = (x1 + x3 - 2 * x2) / 2;
-    const b = (x3 - x1) / 2;
-    if (a) T0 = T0 - b / (2 * a);
+  private getConfidenceWeightedFrequency(): number {
+    if (this.frequencyHistory.length === 0) return this.interpolatedFrequency;
+    
+    // Calculate weighted average based on confidence scores
+    let weightedSum = 0;
+    let totalWeight = 0;
+    
+    // Recent samples get higher weight
+    for (let i = 0; i < this.frequencyHistory.length; i++) {
+      const recencyWeight = (i + 1) / this.frequencyHistory.length; // 0.125 to 1.0
+      const confidenceWeight = Math.pow(this.confidenceHistory[i], 2); // Square for emphasis
+      const combinedWeight = recencyWeight * confidenceWeight;
+      
+      weightedSum += this.frequencyHistory[i] * combinedWeight;
+      totalWeight += combinedWeight;
+    }
+    
+    if (totalWeight === 0) return this.lastConfidentFrequency;
+    
+    const result = weightedSum / totalWeight;
+    
+    // Smooth interpolation toward the target
+    this.interpolatedFrequency = this.interpolatedFrequency * 0.7 + result * 0.3;
+    
+    return this.interpolatedFrequency;
+  }
 
-    return sampleRate / T0;
+  private getSmoothedFrequency(): number {
+    if (this.frequencyHistory.length === 0) return 0;
+    
+    const sorted = [...this.frequencyHistory].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    
+    if (sorted.length % 2 === 0) {
+      return (sorted[mid - 1] + sorted[mid]) / 2;
+    } else {
+      return sorted[mid];
+    }
   }
 
   async startListening(callback: (data: PitchData) => void): Promise<void> {
@@ -173,35 +205,30 @@ export class PitchDetector {
 
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          autoGainControl: true,
-          noiseSuppression: true,
-          // Additional constraints to optimize for voice
-          sampleRate: 44100,
-          channelCount: 1, // Mono for better voice focus
-          volume: 1.0,
-          // Some browsers support these additional voice optimizations
-          googEchoCancellation: true,
-          googAutoGainControl: true,
-          googNoiseSuppression: true,
-          googHighpassFilter: true,
-          googTypingNoiseDetection: true
-        } as any // Type assertion for extended properties
+          echoCancellation: false,
+          autoGainControl: false,
+          noiseSuppression: false
+        }
       });
+
+      console.log('Microphone stream obtained');
 
       this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
-      this.analyser.smoothingTimeConstant = 0.8;
+      // Professional-grade analyser settings
+      this.analyser.fftSize = 8192; // Larger FFT for better frequency resolution
+      this.analyser.smoothingTimeConstant = 0.3; // Less smoothing for real-time response
+      this.analyser.minDecibels = -100; // Better dynamic range
+      this.analyser.maxDecibels = -10;
       this.mediaStreamSource.connect(this.analyser);
       this.isListening = true;
+
+      console.log('Audio analyser connected');
 
       const updatePitch = () => {
         if (!this.isListening || !this.analyser) return;
 
-        // Get both time domain and frequency domain data
         this.analyser.getFloatTimeDomainData(this.buffer);
-        this.analyser.getByteFrequencyData(this.frequencyBuffer);
         
         // Check if we're getting audio data
         let maxVal = 0;
@@ -210,24 +237,63 @@ export class PitchDetector {
             maxVal = Math.abs(this.buffer[i]);
           }
         }
+        
+        if (maxVal > 0.01) {
+          console.log('Audio signal detected, max amplitude:', maxVal);
+        }
 
-        const frequency = this.autoCorrelate(this.buffer, this.audioContext.sampleRate);
+        // Calculate RMS for volume
+        let rms = 0;
+        for (let i = 0; i < this.buffer.length; i++) {
+          const val = this.buffer[i];
+          rms += val * val;
+        }
+        rms = Math.sqrt(rms / this.buffer.length);
+
+        const result = this.detectPitch(this.buffer, this.audioContext.sampleRate);
+        let frequency = result.frequency;
+        const clarity = result.clarity;
+        const currentTime = Date.now();
+
+        // Check for gaps even when no frequency is detected
+        const timeSinceLastDetection = currentTime - this.lastDetectionTime;
+        const hadGap = timeSinceLastDetection > this.PAUSE_THRESHOLD;
+        
+        if (frequency > 0) {
+          if (hadGap) {
+            // Clear history and mark gap
+            this.frequencyHistory = [];
+            this.confidenceHistory = [];
+            this.interpolatedFrequency = 0;
+            this.wasGap = true;
+            console.log('Gap detected, cleared frequency history');
+          } else {
+            this.wasGap = false;
+          }
+          
+          // Use professional-grade confidence-weighted processing
+          frequency = this.processFrequency(frequency, clarity);
+          
+          this.lastDetectionTime = currentTime;
+        }
 
         const pitchData: PitchData = {
-          frequency: 0,
+          frequency: frequency > 0 ? frequency : 0,
           note: null,
           noteString: null,
           cents: null,
-          buffer: this.buffer.slice()
+          buffer: this.buffer.slice(),
+          clarity: clarity,
+          volume: rms,
+          isAfterGap: this.wasGap && frequency > 0 // Mark if this is first detection after a gap
         };
 
-        // Only proceed if we detect a valid frequency and it's likely a voice
-        if (frequency > 0 && this.isVoiceFrequency(frequency, this.frequencyBuffer)) {
+        if (frequency > 0) {
+          console.log('Detected frequency:', frequency, 'clarity:', clarity.toFixed(3));
           const closestNoteData = this.findClosestNote(frequency);
           if (closestNoteData) {
-            pitchData.frequency = frequency;
-            pitchData.note = null; // We don't use note number anymore
-            pitchData.noteString = closestNoteData.note; // This is the full note name with octave
+            pitchData.note = null;
+            pitchData.noteString = closestNoteData.note;
             pitchData.cents = closestNoteData.cents;
           }
         }
@@ -245,6 +311,11 @@ export class PitchDetector {
 
   stopListening(): void {
     this.isListening = false;
+    this.frequencyHistory = [];
+    this.confidenceHistory = [];
+    this.interpolatedFrequency = 0;
+    this.lastConfidentFrequency = 0;
+    this.wasGap = false;
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
@@ -261,6 +332,7 @@ export class PitchDetector {
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;
     }
+    console.log('Stopped listening');
   }
 }
 
@@ -270,4 +342,7 @@ export interface PitchData {
   noteString: string | null;
   cents: number | null;
   buffer: Float32Array;
+  clarity: number;
+  volume: number;
+  isAfterGap: boolean;
 }

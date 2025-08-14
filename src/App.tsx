@@ -15,6 +15,7 @@ function App() {
   const [currentFrequency, setCurrentFrequency] = useState<number>(0);
   const [currentCents, setCurrentCents] = useState<number | null>(null);
   const [waveformBuffer, setWaveformBuffer] = useState<Float32Array | null>(null);
+  const [isAfterGap, setIsAfterGap] = useState<boolean>(false);
   const [isListening, setIsListening] = useState(false);
   const [bpm, setBpm] = useState<number>(60);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -54,11 +55,13 @@ function App() {
       setCurrentNote(data.noteString);
       setCurrentCents(data.cents);
       setWaveformBuffer(data.buffer);
+      setIsAfterGap(data.isAfterGap); // Pass gap information
     } else {
       // When there's no voice input, only update the waveform buffer
       // Keep the last detected note info for reference
       setCurrentFrequency(0);
       setWaveformBuffer(data.buffer);
+      setIsAfterGap(false);
     }
   };
 
@@ -220,6 +223,7 @@ function App() {
               onNoteChange={setCurrentNoteIndex}
               resetTrigger={resetTrigger}
               isGameMode={isGameMode}
+              isAfterGap={isAfterGap}
             />
           )}
         </main>

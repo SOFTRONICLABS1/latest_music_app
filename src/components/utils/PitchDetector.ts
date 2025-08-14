@@ -1,20 +1,24 @@
 import { NOTE_FREQUENCIES } from '../constants/notes';
+import { PitchDetector as Pitchy } from 'pitchy';
 
 export class PitchDetector {
   private audioContext: AudioContext;
   private analyser: AnalyserNode | null = null;
   private mediaStreamSource: MediaStreamAudioSourceNode | null = null;
   private stream: MediaStream | null = null;
-  private bufferLength: number = 2048;
+  private bufferLength: number = 4096; // Larger buffer for better accuracy
   private buffer: Float32Array;
   private isListening: boolean = false;
   private animationId: number | null = null;
   private frequencyHistory: number[] = [];
-  private readonly HISTORY_SIZE = 5;
-  private readonly MIN_RMS = 0.02;
-  private readonly MIN_CLARITY = 0.9;
+  private confidenceHistory: number[] = [];
+  private readonly HISTORY_SIZE = 8; // Increased for smoother interpolation
   private lastDetectionTime: number = 0;
-  private readonly PAUSE_THRESHOLD = 1000;
+  private readonly PAUSE_THRESHOLD = 500; // Reduced for faster response
+  private pitchy: Pitchy<Float32Array> | null = null;
+  private interpolatedFrequency: number = 0;
+  private lastConfidentFrequency: number = 0;
+  private wasGap: boolean = false;
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -50,73 +54,39 @@ export class PitchDetector {
     };
   }
 
-  private autoCorrelate(buf: Float32Array, sampleRate: number): { frequency: number, clarity: number } {
-    const SIZE = buf.length;
-    let rms = 0;
-
-    for (let i = 0; i < SIZE; i++) {
-      const val = buf[i];
-      rms += val * val;
+  private detectPitch(buf: Float32Array, sampleRate: number): { frequency: number, clarity: number } {
+    // Initialize Pitchy detector if not already done
+    if (!this.pitchy) {
+      // Create Pitchy instance for Float32Array with buffer length
+      this.pitchy = Pitchy.forFloat32Array(buf.length);
+      // Professional-grade parameters for maximum accuracy
+      this.pitchy.clarityThreshold = 0.85; // Higher threshold for accuracy
+      this.pitchy.minVolumeDecibels = -40; // More sensitive volume detection
+      this.pitchy.maxInputAmplitude = 1.0; // Normalized amplitude
     }
-    rms = Math.sqrt(rms / SIZE);
-    if (rms < this.MIN_RMS) return { frequency: -1, clarity: 0 };
 
-    let r1 = 0, r2 = SIZE - 1;
-    const thres = 0.2;
-    for (let i = 0; i < SIZE / 2; i++) {
-      if (Math.abs(buf[i]) < thres) {
-        r1 = i;
-        break;
+    try {
+      // Use Pitchy's McLeod Pitch Method (MPM)
+      const [frequency, clarity] = this.pitchy.findPitch(buf, sampleRate);
+      
+      // More sophisticated confidence evaluation
+      if (frequency > 0) {
+        // Check if frequency is in musical range (human vocal range + instruments)
+        const isMusicalRange = frequency >= 80 && frequency <= 2000;
+        
+        // Adaptive clarity threshold based on frequency range
+        const adaptiveThreshold = frequency < 200 ? 0.75 : 0.85; // Lower notes can be harder to detect
+        
+        if (clarity >= adaptiveThreshold && isMusicalRange) {
+          return { frequency, clarity };
+        }
       }
+      
+      return { frequency: -1, clarity: clarity || 0 };
+    } catch (error) {
+      console.warn('Pitchy detection error:', error);
+      return { frequency: -1, clarity: 0 };
     }
-    for (let i = 1; i < SIZE / 2; i++) {
-      if (Math.abs(buf[SIZE - i]) < thres) {
-        r2 = SIZE - i;
-        break;
-      }
-    }
-
-    const slicedBuf = buf.slice(r1, r2);
-    const newSize = slicedBuf.length;
-    if (newSize < 100) return { frequency: -1, clarity: 0 };
-
-    const c = new Array(newSize).fill(0);
-    for (let i = 0; i < newSize; i++) {
-      for (let j = 0; j < newSize - i; j++) {
-        c[i] = c[i] + slicedBuf[j] * slicedBuf[j + i];
-      }
-    }
-
-    let d = 0;
-    while (d < newSize - 1 && c[d] > c[d + 1]) d++;
-    
-    let maxval = -1, maxpos = -1;
-    const minPeriod = Math.floor(sampleRate / 1000);
-    const maxPeriod = Math.floor(sampleRate / 80);
-    
-    for (let i = Math.max(d, minPeriod); i < Math.min(newSize, maxPeriod); i++) {
-      if (c[i] > maxval) {
-        maxval = c[i];
-        maxpos = i;
-      }
-    }
-    
-    if (maxpos === -1 || maxval <= 0) return { frequency: -1, clarity: 0 };
-    
-    const clarity = maxval / c[0];
-    if (clarity < this.MIN_CLARITY) return { frequency: -1, clarity };
-
-    let T0 = maxpos;
-
-    if (T0 > 0 && T0 < newSize - 1) {
-      const x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
-      const a = (x1 + x3 - 2 * x2) / 2;
-      const b = (x3 - x1) / 2;
-      if (a !== 0) T0 = T0 - b / (2 * a);
-    }
-
-    const frequency = sampleRate / T0;
-    return { frequency: this.correctOctaveError(frequency), clarity };
   }
 
   private correctOctaveError(frequency: number): number {
@@ -125,29 +95,92 @@ export class PitchDetector {
     const recentFreq = this.getSmoothedFrequency();
     const ratio = frequency / recentFreq;
     
-    if (ratio > 1.8 && ratio < 2.2) return frequency / 2;
-    if (ratio > 0.45 && ratio < 0.55) return frequency * 2;
-    if (ratio > 2.8 && ratio < 3.2) return frequency / 3;
-    if (ratio > 0.3 && ratio < 0.35) return frequency * 3;
+    // Only apply octave correction for very obvious errors (tighter bounds)
+    // And only if the change is sudden (not gradual transitions)
+    const isGradualTransition = this.isGradualTransition(frequency);
+    
+    if (!isGradualTransition) {
+      // Very tight bounds for octave error correction
+      if (ratio > 1.95 && ratio < 2.05) return frequency / 2;  // Exact 2x
+      if (ratio > 0.495 && ratio < 0.505) return frequency * 2; // Exact 0.5x
+      if (ratio > 2.95 && ratio < 3.05) return frequency / 3;  // Exact 3x
+      if (ratio > 0.33 && ratio < 0.34) return frequency * 3;  // Exact 1/3x
+    }
     
     return frequency;
   }
 
-  private smoothFrequency(frequency: number): number {
-    this.frequencyHistory.push(frequency);
-    if (this.frequencyHistory.length > this.HISTORY_SIZE) {
-      this.frequencyHistory.shift();
+  private isGradualTransition(_frequency: number): boolean {
+    if (this.frequencyHistory.length < 3) return true;
+    
+    // Check if the last few frequencies show a gradual trend
+    const recent = this.frequencyHistory.slice(-3);
+    
+    // Calculate if there's a consistent direction of change
+    const changes = [];
+    for (let i = 1; i < recent.length; i++) {
+      changes.push(recent[i] - recent[i-1]);
     }
     
-    if (this.frequencyHistory.length === 1) {
+    // If all changes are in the same direction and reasonably sized, it's gradual
+    const allPositive = changes.every(change => change > 0);
+    const allNegative = changes.every(change => change < 0);
+    const maxChange = Math.max(...changes.map(Math.abs));
+    
+    return (allPositive || allNegative) && maxChange < 200; // 200Hz max per frame
+  }
+
+  private processFrequency(frequency: number, clarity: number): number {
+    // Store frequency and confidence data
+    this.frequencyHistory.push(frequency);
+    this.confidenceHistory.push(clarity);
+    
+    if (this.frequencyHistory.length > this.HISTORY_SIZE) {
+      this.frequencyHistory.shift();
+      this.confidenceHistory.shift();
+    }
+    
+    // High-confidence frequencies get immediate response
+    if (clarity >= 0.9) {
+      this.lastConfidentFrequency = frequency;
+      this.interpolatedFrequency = frequency;
       return frequency;
     }
     
-    if (this.frequencyHistory.length < 3) {
-      return (this.frequencyHistory.reduce((sum, f) => sum + f, 0) / this.frequencyHistory.length);
+    // For lower confidence, use confidence-weighted interpolation
+    if (this.frequencyHistory.length >= 3) {
+      return this.getConfidenceWeightedFrequency();
     }
     
-    return this.getSmoothedFrequency();
+    // Fallback to current frequency for initial detections
+    return frequency;
+  }
+
+  private getConfidenceWeightedFrequency(): number {
+    if (this.frequencyHistory.length === 0) return this.interpolatedFrequency;
+    
+    // Calculate weighted average based on confidence scores
+    let weightedSum = 0;
+    let totalWeight = 0;
+    
+    // Recent samples get higher weight
+    for (let i = 0; i < this.frequencyHistory.length; i++) {
+      const recencyWeight = (i + 1) / this.frequencyHistory.length; // 0.125 to 1.0
+      const confidenceWeight = Math.pow(this.confidenceHistory[i], 2); // Square for emphasis
+      const combinedWeight = recencyWeight * confidenceWeight;
+      
+      weightedSum += this.frequencyHistory[i] * combinedWeight;
+      totalWeight += combinedWeight;
+    }
+    
+    if (totalWeight === 0) return this.lastConfidentFrequency;
+    
+    const result = weightedSum / totalWeight;
+    
+    // Smooth interpolation toward the target
+    this.interpolatedFrequency = this.interpolatedFrequency * 0.7 + result * 0.3;
+    
+    return this.interpolatedFrequency;
   }
 
   private getSmoothedFrequency(): number {
@@ -182,8 +215,11 @@ export class PitchDetector {
 
       this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();
-      this.analyser.fftSize = 2048;
-      this.analyser.smoothingTimeConstant = 0.8;
+      // Professional-grade analyser settings
+      this.analyser.fftSize = 8192; // Larger FFT for better frequency resolution
+      this.analyser.smoothingTimeConstant = 0.3; // Less smoothing for real-time response
+      this.analyser.minDecibels = -100; // Better dynamic range
+      this.analyser.maxDecibels = -10;
       this.mediaStreamSource.connect(this.analyser);
       this.isListening = true;
 
@@ -206,20 +242,38 @@ export class PitchDetector {
           console.log('Audio signal detected, max amplitude:', maxVal);
         }
 
-        const result = this.autoCorrelate(this.buffer, this.audioContext.sampleRate);
+        // Calculate RMS for volume
+        let rms = 0;
+        for (let i = 0; i < this.buffer.length; i++) {
+          const val = this.buffer[i];
+          rms += val * val;
+        }
+        rms = Math.sqrt(rms / this.buffer.length);
+
+        const result = this.detectPitch(this.buffer, this.audioContext.sampleRate);
         let frequency = result.frequency;
         const clarity = result.clarity;
         const currentTime = Date.now();
 
+        // Check for gaps even when no frequency is detected
+        const timeSinceLastDetection = currentTime - this.lastDetectionTime;
+        const hadGap = timeSinceLastDetection > this.PAUSE_THRESHOLD;
+        
         if (frequency > 0) {
-          const timeSinceLastDetection = currentTime - this.lastDetectionTime;
-          
-          if (timeSinceLastDetection > this.PAUSE_THRESHOLD) {
+          if (hadGap) {
+            // Clear history and mark gap
             this.frequencyHistory = [];
-            console.log('Pause detected, cleared frequency history');
+            this.confidenceHistory = [];
+            this.interpolatedFrequency = 0;
+            this.wasGap = true;
+            console.log('Gap detected, cleared frequency history');
+          } else {
+            this.wasGap = false;
           }
           
-          frequency = this.smoothFrequency(frequency);
+          // Use professional-grade confidence-weighted processing
+          frequency = this.processFrequency(frequency, clarity);
+          
           this.lastDetectionTime = currentTime;
         }
 
@@ -228,8 +282,10 @@ export class PitchDetector {
           note: null,
           noteString: null,
           cents: null,
-          buffer: new Float32Array(this.buffer),
-          clarity: clarity
+          buffer: this.buffer.slice(),
+          clarity: clarity,
+          volume: rms,
+          isAfterGap: this.wasGap && frequency > 0 // Mark if this is first detection after a gap
         };
 
         if (frequency > 0) {
@@ -256,6 +312,10 @@ export class PitchDetector {
   stopListening(): void {
     this.isListening = false;
     this.frequencyHistory = [];
+    this.confidenceHistory = [];
+    this.interpolatedFrequency = 0;
+    this.lastConfidentFrequency = 0;
+    this.wasGap = false;
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
@@ -283,4 +343,6 @@ export interface PitchData {
   cents: number | null;
   buffer: Float32Array;
   clarity: number;
+  volume: number;
+  isAfterGap: boolean; // Flag to indicate this is the first detection after a gap
 }

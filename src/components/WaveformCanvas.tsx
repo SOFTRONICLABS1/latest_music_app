@@ -14,6 +14,7 @@ interface WaveformCanvasProps {
   onNoteChange: (index: number) => void;
   resetTrigger?: number;
   isGameMode?: boolean;
+  isAfterGap?: boolean;
 }
 
 interface WavePoint {
@@ -27,7 +28,6 @@ interface WavePoint {
 export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   notes,
   noteDurations,
-  buffer,
   currentFrequency,
   targetNotes,
   bpm,
@@ -36,6 +36,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   onNoteChange,
   resetTrigger,
   isGameMode = false,
+  isAfterGap = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | undefined>(undefined);
@@ -46,7 +47,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   const isListeningRef = useRef<boolean>(false);
   const currentTargetIndexRef = useRef<number>(0);
   const userFrequencyHistory = useRef<
-    { frequency: number; timestamp: number; color: string }[]
+    { frequency: number; timestamp: number; color: string; isAfterGap: boolean }[]
   >([]);
   const dataCompressionCounter = useRef<number>(0);
   const lastStoredFrequency = useRef<number>(0);
@@ -388,13 +389,13 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         console.log('Audio detected:', currentFrequencyRef.current.toFixed(1), 'Hz');
       }
       
-      // Clean up old entries to prevent memory leaks (keep last 30 seconds)
-      const maxAge = 30000; // 30 seconds
+      // Clean up old entries to prevent memory leaks (keep last 15 seconds for smoother performance)
+      const maxAge = 15000; // 15 seconds
       userFrequencyHistory.current = userFrequencyHistory.current.filter(
         entry => currentTime - entry.timestamp < maxAge
       );
       
-      // More lenient spike filtering - only reject massive artifacts
+      // Ultra-smooth filtering - only store if frequency is reasonable and smooth
       const lastEntry = userFrequencyHistory.current[userFrequencyHistory.current.length - 1];
       let shouldStore = true;
       
@@ -402,10 +403,14 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         const frequencyJump = Math.abs(currentFrequencyRef.current - lastEntry.frequency);
         const timeDiff = currentTime - lastEntry.timestamp;
         
-        // Only reject if it's a massive jump AND within a short time span
-        if (frequencyJump > 500 && timeDiff < 100) {
+        // Professional-grade smoothness: prevent visual artifacts
+        if (frequencyJump > 300 && timeDiff < 50) {
           shouldStore = false;
-          console.log('Rejected extreme spike:', frequencyJump, 'Hz jump in', timeDiff, 'ms');
+        }
+        
+        // Also prevent too frequent updates for ultra-smooth rendering
+        if (timeDiff < 16 && frequencyJump < 5) { // ~60fps throttling for small changes
+          shouldStore = false;
         }
       }
       
@@ -460,11 +465,12 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         ? getFrequencyColor(currentFrequencyRef.current, currentTargetFrequency)
         : "#6c757d"; // Gray when no target
 
-        // Store all detected frequencies with proper color coding
+        // Store all detected frequencies with proper color coding and gap information
         userFrequencyHistory.current.push({
           frequency: currentFrequencyRef.current,
           timestamp: currentTime,
           color: pointColor,
+          isAfterGap: isAfterGap, // Use the gap flag from pitch detection
         });
       } // Close the shouldStore conditional
     }
@@ -485,10 +491,15 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
       // Draw the frequency graph with color segments
       if (userFrequencyHistory.current.length > 1) {
-        // Draw segments with their individual colors
+        // Draw segments with their individual colors, respecting gaps
         for (let i = 1; i < userFrequencyHistory.current.length; i++) {
           const prevEntry = userFrequencyHistory.current[i - 1];
           const currEntry = userFrequencyHistory.current[i];
+
+          // Skip drawing line if current point is after a gap
+          if (currEntry.isAfterGap) {
+            continue; // Don't connect this point to the previous one
+          }
 
           // Calculate X position based on time elapsed since data point 
           const prevTimeFromStart = (currentTime - prevEntry.timestamp) / 1000; // Convert to seconds
