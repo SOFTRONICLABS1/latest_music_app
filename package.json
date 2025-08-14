@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@echogarden/rnnoise-wasm": "^0.2.0",
     "pitchy": "^4.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
