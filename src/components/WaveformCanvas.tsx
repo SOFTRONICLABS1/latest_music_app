@@ -48,6 +48,9 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   const userFrequencyHistory = useRef<
     { frequency: number; timestamp: number; color: string }[]
   >([]);
+  const dataCompressionCounter = useRef<number>(0);
+  const lastStoredFrequency = useRef<number>(0);
+  const renderCache = useRef<{ lastUpdate: number }>({ lastUpdate: 0 });
   const guitarHarmonicsRef = useRef<GuitarHarmonics | null>(null);
   const lastPlayedNoteRef = useRef<{ note: string; startTime: number } | null>(
     null
@@ -99,7 +102,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
   // Calculate Y position for a frequency using expanded range
   const getYPosition = (frequency: number, canvasHeight: number): number => {
-    console.log(buffer)
+    // console.log(buffer)
     if (!frequency || displayNotes.length === 0) return canvasHeight / 2;
 
     // Use display notes (expanded range) for Y position calculation
@@ -376,11 +379,30 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       ctx.restore();
     }
 
-    // Update user frequency history
+    // Update user frequency history with enhanced spike filtering
     if (isListeningRef.current && currentFrequencyRef.current > 0) {
       const currentTime = Date.now();
-
-      // Determine the current target frequency for color coding
+      
+      // Debug: Log frequency detection for troubleshooting
+      if (currentTime % 1000 < 50) { // Log roughly every second
+        console.log('Audio detected:', currentFrequencyRef.current.toFixed(1), 'Hz');
+      }
+      
+      // Basic spike filtering - reject extreme outliers but allow most frequencies
+      const lastEntry = userFrequencyHistory.current[userFrequencyHistory.current.length - 1];
+      let shouldStore = true;
+      
+      if (lastEntry) {
+        const frequencyJump = Math.abs(currentFrequencyRef.current - lastEntry.frequency);
+        // Only reject very extreme jumps (likely artifacts)
+        if (frequencyJump > 300) {
+          shouldStore = false;
+        }
+      }
+      
+      // Only process if not a massive spike
+      if (shouldStore) {
+        // Determine the current target frequency for color coding
       let currentTargetFrequency = null;
       if (isPlaying && targetNotes.length > 0) {
         const totalSequenceDuration = targetNotes.reduce((sum, _, index) => {
@@ -392,8 +414,6 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         const scrollPosition = elapsedTime * pixelsPerSecond;
 
         // Calculate which note is at the middle line
-        // The wave starts from the right, so we need to calculate what's at the middle
-        // The middle line is at canvas.width / 2 distance from the start
         const distanceToMiddle = canvas.width / 2;
 
         // Only start checking when the wave has reached the middle
@@ -407,8 +427,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
           let cumulativeTime = 0;
           let currentNoteIndex = -1;
           for (let i = 0; i < targetNotes.length; i++) {
-            // Use custom duration if provided (non-zero), otherwise use BPM-based duration
-          const noteDuration = (i < noteDurations.length && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
+            const noteDuration = (i < noteDurations.length && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
             if (
               positionInSequence >= cumulativeTime * pixelsPerSecond &&
               positionInSequence <
@@ -427,23 +446,18 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         }
       }
 
-      // Determine color for this point
+      // Determine color based on accuracy
       const pointColor = currentTargetFrequency
         ? getFrequencyColor(currentFrequencyRef.current, currentTargetFrequency)
-        : "#6c757d";
+        : "#6c757d"; // Gray when no target
 
-      // Add current frequency to history with its color
-      userFrequencyHistory.current.push({
-        frequency: currentFrequencyRef.current,
-        timestamp: currentTime,
-        color: pointColor,
-      });
-
-      // Remove old entries that are off screen (more than middleX pixels to the left)
-      const maxAge = (middleX / pixelsPerSecond) * 1000; // Convert pixels to milliseconds
-      userFrequencyHistory.current = userFrequencyHistory.current.filter(
-        (entry) => currentTime - entry.timestamp <= maxAge
-      );
+        // Store all detected frequencies with proper color coding
+        userFrequencyHistory.current.push({
+          frequency: currentFrequencyRef.current,
+          timestamp: currentTime,
+          color: pointColor,
+        });
+      } // Close the shouldStore conditional
     }
 
     // Draw user frequency as a continuous graph with multi-colored segments
@@ -457,11 +471,12 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
           const prevEntry = userFrequencyHistory.current[i - 1];
           const currEntry = userFrequencyHistory.current[i];
 
-          const prevAge = currentTime - prevEntry.timestamp;
-          const currAge = currentTime - currEntry.timestamp;
-
-          const prevX = middleX - (prevAge / 1000) * pixelsPerSecond;
-          const currX = middleX - (currAge / 1000) * pixelsPerSecond;
+          // Calculate X position based on time elapsed since data point (same as target wave)
+          const prevTimeFromStart = (currentTime - prevEntry.timestamp) / 1000;
+          const currTimeFromStart = (currentTime - currEntry.timestamp) / 1000;
+          
+          const prevX = middleX - (prevTimeFromStart * pixelsPerSecond);
+          const currX = middleX - (currTimeFromStart * pixelsPerSecond);
 
           // Only draw if both points are visible
           if (
@@ -619,6 +634,9 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       startTimeRef.current = 0;
       currentTargetIndexRef.current = 0;
       lastPlayedNoteRef.current = null;
+      dataCompressionCounter.current = 0;
+      lastStoredFrequency.current = 0;
+      renderCache.current = { lastUpdate: 0 };
     }
 
     return () => {
@@ -678,6 +696,9 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       startTimeRef.current = 0;
       currentTargetIndexRef.current = 0;
       lastPlayedNoteRef.current = null;
+      dataCompressionCounter.current = 0;
+      lastStoredFrequency.current = 0;
+      renderCache.current = { lastUpdate: 0 };
 
       // Clear the canvas
       const canvas = canvasRef.current;

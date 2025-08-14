@@ -1,28 +1,5 @@
 import { NOTE_FREQUENCIES } from '../constants/notes';
 
-// Type definitions
-export interface PitchData {
-  frequency: number;
-  note: string | null;
-  noteString: string | null;
-  cents: number | null;
-  buffer: Float32Array;
-  volume: number;
-}
-
-export interface ClosestNoteData {
-  note: string;
-  cents: number;
-  noteFrequency: number;
-}
-
-// Extend Window interface for webkit support
-declare global {
-  interface Window {
-    webkitAudioContext: typeof AudioContext;
-  }
-}
-
 export class PitchDetector {
   private audioContext: AudioContext;
   private analyser: AnalyserNode | null = null;
@@ -34,11 +11,11 @@ export class PitchDetector {
   private animationId: number | null = null;
 
   constructor() {
-    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     this.buffer = new Float32Array(this.bufferLength);
   }
 
-  findClosestNote(frequency: number): ClosestNoteData | null {
+  findClosestNote(frequency: number): { note: string, cents: number, noteFrequency: number } | null {
     if (frequency <= 0) return null;
     
     let closestNote = '';
@@ -122,7 +99,7 @@ export class PitchDetector {
     return sampleRate / T0;
   }
 
-  async startListening(callback: (pitchData: PitchData) => void): Promise<void> {
+  async startListening(callback: (data: PitchData) => void): Promise<void> {
     try {
       // Resume audio context if suspended
       if (this.audioContext.state === 'suspended') {
@@ -131,11 +108,13 @@ export class PitchDetector {
 
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          autoGainControl: true,
-          noiseSuppression: true
+          echoCancellation: false,
+          autoGainControl: false,
+          noiseSuppression: false
         }
       });
+
+      console.log('Microphone stream obtained');
 
       this.mediaStreamSource = this.audioContext.createMediaStreamSource(this.stream);
       this.analyser = this.audioContext.createAnalyser();
@@ -144,7 +123,9 @@ export class PitchDetector {
       this.mediaStreamSource.connect(this.analyser);
       this.isListening = true;
 
-      const updatePitch = (): void => {
+      console.log('Audio analyser connected');
+
+      const updatePitch = () => {
         if (!this.isListening || !this.analyser) return;
 
         this.analyser.getFloatTimeDomainData(this.buffer);
@@ -156,6 +137,10 @@ export class PitchDetector {
             maxVal = Math.abs(this.buffer[i]);
           }
         }
+        
+        if (maxVal > 0.01) {
+          console.log('Audio signal detected, max amplitude:', maxVal);
+        }
 
         const frequency = this.autoCorrelate(this.buffer, this.audioContext.sampleRate);
 
@@ -164,15 +149,15 @@ export class PitchDetector {
           note: null,
           noteString: null,
           cents: null,
-          buffer: this.buffer.slice(),
-          volume: maxVal
+          buffer: this.buffer.slice()
         };
 
         if (frequency > 0) {
+          console.log('Detected frequency:', frequency);
           const closestNoteData = this.findClosestNote(frequency);
           if (closestNoteData) {
-            pitchData.note = null;
-            pitchData.noteString = closestNoteData.note;
+            pitchData.note = null; // We don't use note number anymore
+            pitchData.noteString = closestNoteData.note; // This is the full note name with octave
             pitchData.cents = closestNoteData.cents;
           }
         }
@@ -206,5 +191,14 @@ export class PitchDetector {
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;
     }
+    console.log('Stopped listening');
   }
+}
+
+export interface PitchData {
+  frequency: number;
+  note: number | null;
+  noteString: string | null;
+  cents: number | null;
+  buffer: Float32Array;
 }
