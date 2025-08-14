@@ -72,7 +72,7 @@ export class PitchDetector {
       // More sophisticated confidence evaluation
       if (frequency > 0) {
         // Check if frequency is in musical range (human vocal range + instruments)
-        const isMusicalRange = frequency >= 10 && frequency <= 10000;
+        const isMusicalRange = frequency >= 50 && frequency <= 10000;
         
         // Adaptive clarity threshold based on frequency range
         const adaptiveThreshold = frequency < 200 ? 0.75 : 0.85; // Lower notes can be harder to detect
