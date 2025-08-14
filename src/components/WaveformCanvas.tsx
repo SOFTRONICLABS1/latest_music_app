@@ -389,7 +389,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       ctx.restore();
     }
 
-    // Auto-scroll to user's current frequency
+    // Auto-scroll when user hits viewport edges
     if (isListeningRef.current && currentFrequencyRef.current > 0) {
       const pixelsPerNote = 40;
       const frequencies = displayNotes.map(n => NOTE_FREQUENCIES[n]).filter(f => f);
@@ -406,11 +406,21 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         }
       }
       
-      // Calculate target scroll position to center this note on screen with inverted Y-axis
+      // Calculate current note position with inverted Y-axis
       const totalHeight = displayNotes.length * pixelsPerNote;
-      const noteY = totalHeight - (closestNoteIndex * pixelsPerNote + pixelsPerNote / 2);
-      const centerY = canvas.height / 2;
-      targetScrollOffsetRef.current = centerY - noteY;
+      const noteY = totalHeight - (closestNoteIndex * pixelsPerNote + pixelsPerNote / 2) + scrollOffsetRef.current;
+      
+      // Check if note is near viewport edges and needs scrolling
+      const edgeThreshold = pixelsPerNote * 2; // 2 notes from edge
+      const scrollAmount = pixelsPerNote * 5.5; // Scroll by 5.5 notes
+      
+      if (noteY < edgeThreshold) {
+        // User hit top edge, scroll up by 5-6 notes
+        targetScrollOffsetRef.current += scrollAmount;
+      } else if (noteY > canvas.height - edgeThreshold) {
+        // User hit bottom edge, scroll down by 5-6 notes
+        targetScrollOffsetRef.current -= scrollAmount;
+      }
     }
 
     // Update user frequency history with enhanced spike filtering
