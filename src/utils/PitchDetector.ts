@@ -5,6 +5,9 @@ export class PitchDetector {
   private audioContext: AudioContext;
   private analyser: AnalyserNode | null = null;
   private mediaStreamSource: MediaStreamAudioSourceNode | null = null;
+  private bandpassFilter: BiquadFilterNode | null = null;
+  private highpassFilter: BiquadFilterNode | null = null;
+  private lowpassFilter: BiquadFilterNode | null = null;
   private stream: MediaStream | null = null;
   private bufferLength: number = 4096; // Larger buffer for better accuracy
   private buffer: Float32Array;
@@ -23,6 +26,25 @@ export class PitchDetector {
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     this.buffer = new Float32Array(this.bufferLength);
+    this.setupFilters();
+  }
+
+  private setupFilters(): void {
+    // Create bandpass filter chain for better noise rejection
+    // High-pass filter to remove low-frequency noise (HVAC, traffic, etc.)
+    this.highpassFilter = this.audioContext.createBiquadFilter();
+    this.highpassFilter.type = 'highpass';
+    this.highpassFilter.frequency.setValueAtTime(40, this.audioContext.currentTime); // Remove below 40Hz
+    this.highpassFilter.Q.setValueAtTime(0.7, this.audioContext.currentTime);
+
+    // Low-pass filter to remove high-frequency noise (hiss, electronic interference)
+    this.lowpassFilter = this.audioContext.createBiquadFilter();
+    this.lowpassFilter.type = 'lowpass';
+    this.lowpassFilter.frequency.setValueAtTime(8000, this.audioContext.currentTime); // Remove above 8kHz
+    this.lowpassFilter.Q.setValueAtTime(0.7, this.audioContext.currentTime);
+
+    // Connect filters in series: highpass -> lowpass
+    this.highpassFilter.connect(this.lowpassFilter);
   }
 
   findClosestNote(frequency: number): { note: string, cents: number, noteFrequency: number } | null {
@@ -205,9 +227,12 @@ export class PitchDetector {
 
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: false,
+          echoCancellation: true,
           autoGainControl: false,
-          noiseSuppression: false
+          noiseSuppression: true,
+          channelCount: 1,
+          sampleSize: 24,
+          sampleRate: 48000
         }
       });
 
@@ -220,7 +245,16 @@ export class PitchDetector {
       this.analyser.smoothingTimeConstant = 0.3; // Less smoothing for real-time response
       this.analyser.minDecibels = -100; // Better dynamic range
       this.analyser.maxDecibels = -10;
-      this.mediaStreamSource.connect(this.analyser);
+      
+      // Connect audio chain: microphone -> highpass -> lowpass -> analyser
+      if (this.highpassFilter && this.lowpassFilter) {
+        this.mediaStreamSource.connect(this.highpassFilter);
+        this.lowpassFilter.connect(this.analyser);
+      } else {
+        // Fallback if filters not available
+        this.mediaStreamSource.connect(this.analyser);
+      }
+      
       this.isListening = true;
 
       console.log('Audio analyser connected');
@@ -282,7 +316,7 @@ export class PitchDetector {
           note: null,
           noteString: null,
           cents: null,
-          buffer: this.buffer.slice(),
+          buffer: new Float32Array(this.buffer),
           clarity: clarity,
           volume: rms,
           isAfterGap: this.wasGap && frequency > 0 // Mark if this is first detection after a gap
@@ -323,6 +357,12 @@ export class PitchDetector {
     if (this.mediaStreamSource) {
       this.mediaStreamSource.disconnect();
       this.mediaStreamSource = null;
+    }
+    if (this.highpassFilter) {
+      this.highpassFilter.disconnect();
+    }
+    if (this.lowpassFilter) {
+      this.lowpassFilter.disconnect();
     }
     if (this.analyser) {
       this.analyser.disconnect();
