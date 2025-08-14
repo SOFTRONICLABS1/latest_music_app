@@ -9,6 +9,12 @@ export class PitchDetector {
   private buffer: Float32Array;
   private isListening: boolean = false;
   private animationId: number | null = null;
+  private frequencyHistory: number[] = [];
+  private readonly HISTORY_SIZE = 5;
+  private readonly MIN_RMS = 0.02;
+  private readonly MIN_CLARITY = 0.9;
+  private lastDetectionTime: number = 0;
+  private readonly PAUSE_THRESHOLD = 1000;
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -44,7 +50,7 @@ export class PitchDetector {
     };
   }
 
-  private autoCorrelate(buf: Float32Array, sampleRate: number): number {
+  private autoCorrelate(buf: Float32Array, sampleRate: number): { frequency: number, clarity: number } {
     const SIZE = buf.length;
     let rms = 0;
 
@@ -53,7 +59,7 @@ export class PitchDetector {
       rms += val * val;
     }
     rms = Math.sqrt(rms / SIZE);
-    if (rms < 0.01) return -1;
+    if (rms < this.MIN_RMS) return { frequency: -1, clarity: 0 };
 
     let r1 = 0, r2 = SIZE - 1;
     const thres = 0.2;
@@ -72,6 +78,7 @@ export class PitchDetector {
 
     const slicedBuf = buf.slice(r1, r2);
     const newSize = slicedBuf.length;
+    if (newSize < 100) return { frequency: -1, clarity: 0 };
 
     const c = new Array(newSize).fill(0);
     for (let i = 0; i < newSize; i++) {
@@ -81,22 +88,79 @@ export class PitchDetector {
     }
 
     let d = 0;
-    while (c[d] > c[d + 1]) d++;
+    while (d < newSize - 1 && c[d] > c[d + 1]) d++;
+    
     let maxval = -1, maxpos = -1;
-    for (let i = d; i < newSize; i++) {
+    const minPeriod = Math.floor(sampleRate / 1000);
+    const maxPeriod = Math.floor(sampleRate / 80);
+    
+    for (let i = Math.max(d, minPeriod); i < Math.min(newSize, maxPeriod); i++) {
       if (c[i] > maxval) {
         maxval = c[i];
         maxpos = i;
       }
     }
+    
+    if (maxpos === -1 || maxval <= 0) return { frequency: -1, clarity: 0 };
+    
+    const clarity = maxval / c[0];
+    if (clarity < this.MIN_CLARITY) return { frequency: -1, clarity };
+
     let T0 = maxpos;
 
-    const x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
-    const a = (x1 + x3 - 2 * x2) / 2;
-    const b = (x3 - x1) / 2;
-    if (a) T0 = T0 - b / (2 * a);
+    if (T0 > 0 && T0 < newSize - 1) {
+      const x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
+      const a = (x1 + x3 - 2 * x2) / 2;
+      const b = (x3 - x1) / 2;
+      if (a !== 0) T0 = T0 - b / (2 * a);
+    }
 
-    return sampleRate / T0;
+    const frequency = sampleRate / T0;
+    return { frequency: this.correctOctaveError(frequency), clarity };
+  }
+
+  private correctOctaveError(frequency: number): number {
+    if (this.frequencyHistory.length < 3) return frequency;
+    
+    const recentFreq = this.getSmoothedFrequency();
+    const ratio = frequency / recentFreq;
+    
+    if (ratio > 1.8 && ratio < 2.2) return frequency / 2;
+    if (ratio > 0.45 && ratio < 0.55) return frequency * 2;
+    if (ratio > 2.8 && ratio < 3.2) return frequency / 3;
+    if (ratio > 0.3 && ratio < 0.35) return frequency * 3;
+    
+    return frequency;
+  }
+
+  private smoothFrequency(frequency: number): number {
+    this.frequencyHistory.push(frequency);
+    if (this.frequencyHistory.length > this.HISTORY_SIZE) {
+      this.frequencyHistory.shift();
+    }
+    
+    if (this.frequencyHistory.length === 1) {
+      return frequency;
+    }
+    
+    if (this.frequencyHistory.length < 3) {
+      return (this.frequencyHistory.reduce((sum, f) => sum + f, 0) / this.frequencyHistory.length);
+    }
+    
+    return this.getSmoothedFrequency();
+  }
+
+  private getSmoothedFrequency(): number {
+    if (this.frequencyHistory.length === 0) return 0;
+    
+    const sorted = [...this.frequencyHistory].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    
+    if (sorted.length % 2 === 0) {
+      return (sorted[mid - 1] + sorted[mid]) / 2;
+    } else {
+      return sorted[mid];
+    }
   }
 
   async startListening(callback: (data: PitchData) => void): Promise<void> {
@@ -142,22 +206,38 @@ export class PitchDetector {
           console.log('Audio signal detected, max amplitude:', maxVal);
         }
 
-        const frequency = this.autoCorrelate(this.buffer, this.audioContext.sampleRate);
+        const result = this.autoCorrelate(this.buffer, this.audioContext.sampleRate);
+        let frequency = result.frequency;
+        const clarity = result.clarity;
+        const currentTime = Date.now();
+
+        if (frequency > 0) {
+          const timeSinceLastDetection = currentTime - this.lastDetectionTime;
+          
+          if (timeSinceLastDetection > this.PAUSE_THRESHOLD) {
+            this.frequencyHistory = [];
+            console.log('Pause detected, cleared frequency history');
+          }
+          
+          frequency = this.smoothFrequency(frequency);
+          this.lastDetectionTime = currentTime;
+        }
 
         const pitchData: PitchData = {
           frequency: frequency > 0 ? frequency : 0,
           note: null,
           noteString: null,
           cents: null,
-          buffer: this.buffer.slice()
+          buffer: new Float32Array(this.buffer),
+          clarity: clarity
         };
 
         if (frequency > 0) {
-          console.log('Detected frequency:', frequency);
+          console.log('Detected frequency:', frequency, 'clarity:', clarity.toFixed(3));
           const closestNoteData = this.findClosestNote(frequency);
           if (closestNoteData) {
-            pitchData.note = null; // We don't use note number anymore
-            pitchData.noteString = closestNoteData.note; // This is the full note name with octave
+            pitchData.note = null;
+            pitchData.noteString = closestNoteData.note;
             pitchData.cents = closestNoteData.cents;
           }
         }
@@ -175,6 +255,7 @@ export class PitchDetector {
 
   stopListening(): void {
     this.isListening = false;
+    this.frequencyHistory = [];
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
@@ -201,4 +282,5 @@ export interface PitchData {
   noteString: string | null;
   cents: number | null;
   buffer: Float32Array;
+  clarity: number;
 }

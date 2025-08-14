@@ -388,15 +388,24 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         console.log('Audio detected:', currentFrequencyRef.current.toFixed(1), 'Hz');
       }
       
-      // Basic spike filtering - reject extreme outliers but allow most frequencies
+      // Clean up old entries to prevent memory leaks (keep last 30 seconds)
+      const maxAge = 30000; // 30 seconds
+      userFrequencyHistory.current = userFrequencyHistory.current.filter(
+        entry => currentTime - entry.timestamp < maxAge
+      );
+      
+      // More lenient spike filtering - only reject massive artifacts
       const lastEntry = userFrequencyHistory.current[userFrequencyHistory.current.length - 1];
       let shouldStore = true;
       
-      if (lastEntry) {
+      if (lastEntry && userFrequencyHistory.current.length > 0) {
         const frequencyJump = Math.abs(currentFrequencyRef.current - lastEntry.frequency);
-        // Only reject very extreme jumps (likely artifacts)
-        if (frequencyJump > 300) {
+        const timeDiff = currentTime - lastEntry.timestamp;
+        
+        // Only reject if it's a massive jump AND within a short time span
+        if (frequencyJump > 500 && timeDiff < 100) {
           shouldStore = false;
+          console.log('Rejected extreme spike:', frequencyJump, 'Hz jump in', timeDiff, 'ms');
         }
       }
       
@@ -461,8 +470,18 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
     }
 
     // Draw user frequency as a continuous graph with multi-colored segments
-    if (isListeningRef.current && userFrequencyHistory.current.length > 0) {
+    // Show graph if we have history, regardless of current listening state
+    if (userFrequencyHistory.current.length > 0) {
       const currentTime = Date.now();
+      
+      // Debug: Log graph state periodically
+      if (currentTime % 5000 < 50) { // Every 5 seconds
+        console.log('User graph state:', {
+          historyLength: userFrequencyHistory.current.length,
+          currentFreq: currentFrequencyRef.current,
+          isListening: isListeningRef.current
+        });
+      }
 
       // Draw the frequency graph with color segments
       if (userFrequencyHistory.current.length > 1) {
@@ -471,19 +490,19 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
           const prevEntry = userFrequencyHistory.current[i - 1];
           const currEntry = userFrequencyHistory.current[i];
 
-          // Calculate X position based on time elapsed since data point (same as target wave)
-          const prevTimeFromStart = (currentTime - prevEntry.timestamp) / 1000;
-          const currTimeFromStart = (currentTime - currEntry.timestamp) / 1000;
+          // Calculate X position based on time elapsed since data point 
+          const prevTimeFromStart = (currentTime - prevEntry.timestamp) / 1000; // Convert to seconds
+          const currTimeFromStart = (currentTime - currEntry.timestamp) / 1000; // Convert to seconds
           
           const prevX = middleX - (prevTimeFromStart * pixelsPerSecond);
           const currX = middleX - (currTimeFromStart * pixelsPerSecond);
 
-          // Only draw if both points are visible
+          // Expand visible range to show more history (allow drawing from left edge to middle)
           if (
-            prevX >= 0 &&
-            prevX <= middleX &&
-            currX >= 0 &&
-            currX <= middleX
+            prevX >= -50 && // Allow some off-screen rendering for smoothness
+            prevX <= canvas.width &&
+            currX >= -50 &&
+            currX <= canvas.width
           ) {
             const prevY = getYPosition(prevEntry.frequency, canvas.height);
             const currY = getYPosition(currEntry.frequency, canvas.height);
@@ -499,13 +518,16 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         }
       }
 
-      // Draw current frequency point and value
-      if (
-        currentFrequencyRef.current > 0 &&
-        userFrequencyHistory.current.length > 0
-      ) {
+      // Draw current frequency point and value (show most recent if not currently detecting)
+      const displayFreq = currentFrequencyRef.current > 0 
+        ? currentFrequencyRef.current 
+        : (userFrequencyHistory.current.length > 0 
+           ? userFrequencyHistory.current[userFrequencyHistory.current.length - 1].frequency 
+           : 0);
+           
+      if (displayFreq > 0 && userFrequencyHistory.current.length > 0) {
         const currentY = getYPosition(
-          currentFrequencyRef.current,
+          displayFreq,
           canvas.height
         );
         // Use the color from the latest entry
@@ -574,21 +596,20 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         }
 
         if (currentTargetFrequency) {
-          const difference =
-            currentFrequencyRef.current - currentTargetFrequency;
+          const difference = displayFreq - currentTargetFrequency;
           const diffText =
             difference > 0
               ? `+${difference.toFixed(1)}`
               : difference.toFixed(1);
           ctx.fillText(
-            `${currentFrequencyRef.current.toFixed(1)} Hz (${diffText})`,
+            `${displayFreq.toFixed(1)} Hz (${diffText})`,
             middleX + 10,
             currentY
           );
         } else {
           // Just show the frequency when no target
           ctx.fillText(
-            `${currentFrequencyRef.current.toFixed(1)} Hz`,
+            `${displayFreq.toFixed(1)} Hz`,
             middleX + 10,
             currentY
           );
