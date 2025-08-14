@@ -20,17 +20,10 @@ export const LeftMenu: React.FC<LeftMenuProps> = ({
   isGameMode = false,
   isGamePlaying = false,
 }) => {
-  const defaultNotes = "C3,B2, D3, E3, F3, G3, A3, B3";
+  const defaultNotes = "C3,D3, E3, F3, G3, A3, B3, C4, B3, A3, G3, F3, E3, D3, C3";
   const [inputValue, setInputValue] = useState(defaultNotes);
   const [currentNotes, setCurrentNotes] = useState<string[]>([
-    "C3",
-    "B2",
-    "D3",
-    "E3",
-    "F3",
-    "G3",
-    "A3",
-    "B3",
+    "C3","D3", "E3", "F3", "G3", "A3", "B3", "C4", "B3", "A3", "G3", "F3", "E3", "D3", "C3"
   ]);
   const [currentDurations, setCurrentDurations] = useState<number[]>([
     0, 0, 0, 0, 0, 0, 0, 0, // 0 means use BPM

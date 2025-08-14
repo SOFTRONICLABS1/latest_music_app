@@ -412,7 +412,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       
       // Check if note is near viewport edges and needs scrolling
       const edgeThreshold = pixelsPerNote * 2; // 2 notes from edge
-      const scrollAmount = pixelsPerNote * 5.5; // Scroll by 5.5 notes
+      const scrollAmount = pixelsPerNote * 0.5; // Scroll by 5.5 notes
       
       if (noteY < edgeThreshold) {
         // User hit top edge, scroll up by 5-6 notes
