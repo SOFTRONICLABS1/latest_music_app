@@ -56,6 +56,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   const lastPlayedNoteRef = useRef<{ note: string; startTime: number } | null>(
     null
   );
+  const scrollOffsetRef = useRef<number>(0);
+  const targetScrollOffsetRef = useRef<number>(0);
 
   // Calculate pixels per second based on BPM (notes per minute)
   // BPM 120 = 120 notes/min = 2 notes/sec = 0.5 sec per note
@@ -64,49 +66,19 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
   const secondsPerNote = 60 / bpm; // Direct calculation: 60 seconds / BPM = seconds per note
   const pixelsPerSecond = 100 / secondsPerNote; // 100 pixels per note duration
 
-  // Function to get expanded notes range for display
-  const getExpandedNotesRange = (targetNotes: string[]): string[] => {
-    if (targetNotes.length === 0) return [];
-
-    // Get all note names as an ordered array
-    const allNoteKeys = Object.keys(NOTE_FREQUENCIES);
-
-    // Find min and max notes from target
-    let minIndex = allNoteKeys.length;
-    let maxIndex = -1;
-
-    targetNotes.forEach((note) => {
-      const index = allNoteKeys.indexOf(note);
-      if (index !== -1) {
-        minIndex = Math.min(minIndex, index);
-        maxIndex = Math.max(maxIndex, index);
-      }
-    });
-
-    if (minIndex === allNoteKeys.length || maxIndex === -1) return targetNotes;
-
-    // Expand range by up to 3 notes on each side
-    const expandedMinIndex = Math.max(0, minIndex - 3);
-    const expandedMaxIndex = Math.min(allNoteKeys.length - 1, maxIndex + 3);
-
-    // Return the expanded range
-    const expandedNotes: string[] = [];
-    for (let i = expandedMinIndex; i <= expandedMaxIndex; i++) {
-      expandedNotes.push(allNoteKeys[i]);
-    }
-
-    return expandedNotes;
+  // Get all notes for display - show the full range in ascending frequency order
+  const getAllNotes = (): string[] => {
+    return Object.keys(NOTE_FREQUENCIES).sort((a, b) => NOTE_FREQUENCIES[a] - NOTE_FREQUENCIES[b]);
   };
 
-  // Get expanded notes for display
-  const displayNotes = getExpandedNotesRange(targetNotes);
+  // Get all notes for display
+  const displayNotes = getAllNotes();
 
-  // Calculate Y position for a frequency using expanded range
+  // Calculate Y position for a frequency using all notes with scrolling offset
   const getYPosition = (frequency: number, canvasHeight: number): number => {
-    // console.log(buffer)
     if (!frequency || displayNotes.length === 0) return canvasHeight / 2;
 
-    // Use display notes (expanded range) for Y position calculation
+    // Use all notes for Y position calculation
     const frequencies = displayNotes
       .map((n) => NOTE_FREQUENCIES[n])
       .filter((f) => f);
@@ -118,10 +90,28 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
 
     if (range === 0) return canvasHeight / 2;
 
-    const normalized = (frequency - minFreq) / range;
-    return (
-      canvasHeight - (normalized * canvasHeight * 0.9 + canvasHeight * 0.05)
-    );
+    // Calculate total height needed for all notes (each note gets ~40 pixels)
+    const pixelsPerNote = 40;
+    const totalNotesHeight = displayNotes.length * pixelsPerNote;
+    
+    // Find which note this frequency is closest to
+    let closestNoteIndex = 0;
+    let minDiff = Math.abs(frequency - frequencies[0]);
+    
+    for (let i = 1; i < frequencies.length; i++) {
+      const diff = Math.abs(frequency - frequencies[i]);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestNoteIndex = i;
+      }
+    }
+
+    // Calculate base position for this note with inverted Y-axis (low freq at bottom, high at top)
+    const totalHeight = displayNotes.length * pixelsPerNote;
+    const baseY = totalHeight - (closestNoteIndex * pixelsPerNote + pixelsPerNote / 2);
+    
+    // Apply scroll offset
+    return baseY + scrollOffsetRef.current;
   };
 
   // Get color based on frequency match using cents (musical intervals)
@@ -151,6 +141,14 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
     if (!startTimeRef.current) startTimeRef.current = currentTime;
     const elapsedTime = (currentTime - startTimeRef.current) / 1000; // in seconds
 
+    // Update scroll position with smooth animation
+    const scrollDiff = targetScrollOffsetRef.current - scrollOffsetRef.current;
+    if (Math.abs(scrollDiff) > 1) {
+      scrollOffsetRef.current += scrollDiff * 0.1; // Smooth interpolation
+    } else {
+      scrollOffsetRef.current = targetScrollOffsetRef.current;
+    }
+
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -158,7 +156,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
     ctx.fillStyle = "#f8f9fa";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw grid
+    // Draw vertical grid lines
     ctx.strokeStyle = "#e9ecef";
     ctx.lineWidth = 1;
     for (let i = 0; i < canvas.width; i += 50) {
@@ -168,33 +166,44 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       ctx.stroke();
     }
 
-    // Draw note labels with frequency for expanded range
+    // Calculate which notes are visible on screen with inverted Y-axis
+    const pixelsPerNote = 40;
+    const totalHeight = displayNotes.length * pixelsPerNote;
+    
+    // With inverted Y-axis, we need to recalculate visible range
+    const visibleStartIndex = 0;
+    const visibleEndIndex = displayNotes.length - 1;
+
+    // Draw note labels with frequency - render all notes and let canvas clipping handle visibility
     ctx.font = "14px Arial";
-    displayNotes.forEach((note) => {
+    for (let i = 0; i < displayNotes.length; i++) {
+      const note = displayNotes[i];
       const freq = NOTE_FREQUENCIES[note];
-      if (!freq) return;
+      if (!freq) continue;
 
-      const y = getYPosition(freq, canvas.height);
+      const y = totalHeight - (i * pixelsPerNote + pixelsPerNote / 2) + scrollOffsetRef.current;
+      
+      // Only draw if on screen for performance
+      if (y >= -50 && y <= canvas.height + 50) {
+        // Check if this is in the target notes list
+        const isTarget = targetNotes.includes(note);
 
-      // Check if this is in the target notes list (user entered/default)
-      const isTarget = targetNotes.includes(note);
+        // Draw horizontal guide line for all notes
+        ctx.strokeStyle = isTarget ? "#dee2e6" : "#f1f3f5";
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([2, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-      // Draw faint horizontal guide line for all notes
-      ctx.strokeStyle = isTarget ? "#dee2e6" : "#f1f3f5";
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([2, 4]);
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Draw note label with frequency
-      // Target notes are bold and blue, expanded notes are gray
-      ctx.fillStyle = isTarget ? "#1c7ed6" : "#adb5bd";
-      ctx.font = isTarget ? "bold 14px Arial" : "12px Arial";
-      ctx.fillText(`${note} (${freq.toFixed(0)}Hz)`, 5, y - 5);
-    });
+        // Draw note label with frequency
+        ctx.fillStyle = isTarget ? "#1c7ed6" : "#adb5bd";
+        ctx.font = isTarget ? "bold 14px Arial" : "12px Arial";
+        ctx.fillText(`${note} (${freq.toFixed(0)}Hz)`, 5, y - 5);
+      }
+    }
 
     // Draw blue middle line
     const middleX = canvas.width / 2;
@@ -380,6 +389,30 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       ctx.restore();
     }
 
+    // Auto-scroll to user's current frequency
+    if (isListeningRef.current && currentFrequencyRef.current > 0) {
+      const pixelsPerNote = 40;
+      const frequencies = displayNotes.map(n => NOTE_FREQUENCIES[n]).filter(f => f);
+      
+      // Find which note the current frequency is closest to
+      let closestNoteIndex = 0;
+      let minDiff = Math.abs(currentFrequencyRef.current - frequencies[0]);
+      
+      for (let i = 1; i < frequencies.length; i++) {
+        const diff = Math.abs(currentFrequencyRef.current - frequencies[i]);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestNoteIndex = i;
+        }
+      }
+      
+      // Calculate target scroll position to center this note on screen with inverted Y-axis
+      const totalHeight = displayNotes.length * pixelsPerNote;
+      const noteY = totalHeight - (closestNoteIndex * pixelsPerNote + pixelsPerNote / 2);
+      const centerY = canvas.height / 2;
+      targetScrollOffsetRef.current = centerY - noteY;
+    }
+
     // Update user frequency history with enhanced spike filtering
     if (isListeningRef.current && currentFrequencyRef.current > 0) {
       const currentTime = Date.now();
@@ -489,7 +522,7 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         });
       }
 
-      // Draw the frequency graph with color segments
+      // Draw the frequency graph with color segments using horizontal timeline
       if (userFrequencyHistory.current.length > 1) {
         // Draw segments with their individual colors, respecting gaps
         for (let i = 1; i < userFrequencyHistory.current.length; i++) {
@@ -518,13 +551,16 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
             const prevY = getYPosition(prevEntry.frequency, canvas.height);
             const currY = getYPosition(currEntry.frequency, canvas.height);
 
-            // Use the color stored with each point
-            ctx.strokeStyle = currEntry.color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(prevX, prevY);
-            ctx.lineTo(currX, currY);
-            ctx.stroke();
+            // Only draw if both Y positions are visible on screen
+            if (prevY >= -50 && prevY <= canvas.height + 50 && currY >= -50 && currY <= canvas.height + 50) {
+              // Use the color stored with each point
+              ctx.strokeStyle = currEntry.color;
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.moveTo(prevX, prevY);
+              ctx.lineTo(currX, currY);
+              ctx.stroke();
+            }
           }
         }
       }
@@ -537,93 +573,38 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
            : 0);
            
       if (displayFreq > 0 && userFrequencyHistory.current.length > 0) {
-        const currentY = getYPosition(
-          displayFreq,
-          canvas.height
-        );
-        // Use the color from the latest entry
-        const currentColor =
-          userFrequencyHistory.current[userFrequencyHistory.current.length - 1]
-            .color;
+        const currentY = getYPosition(displayFreq, canvas.height);
+        
+        // Only draw if the current frequency point is visible on screen
+        if (currentY >= -50 && currentY <= canvas.height + 50) {
+          // Use the color from the latest entry
+          const currentColor =
+            userFrequencyHistory.current[userFrequencyHistory.current.length - 1]
+              .color;
 
-        // Draw a circle at the current position
-        ctx.fillStyle = currentColor;
-        ctx.beginPath();
-        ctx.arc(middleX, currentY, 5, 0, 2 * Math.PI);
-        ctx.fill();
+          // Draw a circle at the current position
+          ctx.fillStyle = currentColor;
+          ctx.beginPath();
+          ctx.arc(middleX, currentY, 6, 0, 2 * Math.PI);
+          ctx.fill();
 
-        // Draw frequency value and difference
-        ctx.fillStyle = currentColor;
-        ctx.font = "bold 14px Arial";
+          // Draw a subtle glow effect
+          ctx.strokeStyle = currentColor;
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = 0.3;
+          ctx.beginPath();
+          ctx.arc(middleX, currentY, 12, 0, 2 * Math.PI);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
 
-        // Get current target frequency for difference calculation
-        let currentTargetFrequency = null;
-        if (isPlaying && targetNotes.length > 0) {
-          const totalSequenceDuration = noteDurations.reduce(
-            (sum, duration, index) => {
-              if (index < targetNotes.length) {
-                return sum + duration / 1000;
-              }
-              return sum;
-            },
-            0
-          );
-          const scrollPosition = elapsedTime * pixelsPerSecond;
-
-          // Calculate which note is at the middle line
-          const distanceToMiddle = canvas.width / 2;
-
-          // Only start checking when the wave has reached the middle
-          if (scrollPosition > distanceToMiddle) {
-            const adjustedPosition = scrollPosition - distanceToMiddle;
-            const positionInSequence =
-              adjustedPosition % (totalSequenceDuration * pixelsPerSecond);
-
-            // Find which note is at the current position
-            let cumulativeTime = 0;
-            let currentNoteIndex = -1;
-            for (let i = 0; i < targetNotes.length; i++) {
-              // Use custom duration if provided (non-zero), otherwise use BPM-based duration
-          const noteDuration = (i < noteDurations.length && noteDurations[i] > 0) ? (noteDurations[i] / 1000) : secondsPerNote;
-              if (
-                positionInSequence >= cumulativeTime * pixelsPerSecond &&
-                positionInSequence <
-                  (cumulativeTime + noteDuration) * pixelsPerSecond
-              ) {
-                currentNoteIndex = i;
-                break;
-              }
-              cumulativeTime += noteDuration;
-            }
-
-            if (
-              currentNoteIndex >= 0 &&
-              currentNoteIndex < targetNotes.length
-            ) {
-              const currentNote = targetNotes[currentNoteIndex];
-              currentTargetFrequency = NOTE_FREQUENCIES[currentNote];
-            }
-          }
-        }
-
-        if (currentTargetFrequency) {
-          const difference = displayFreq - currentTargetFrequency;
-          const diffText =
-            difference > 0
-              ? `+${difference.toFixed(1)}`
-              : difference.toFixed(1);
-          ctx.fillText(
-            `${displayFreq.toFixed(1)} Hz (${diffText})`,
-            middleX + 10,
-            currentY
-          );
-        } else {
-          // Just show the frequency when no target
-          ctx.fillText(
-            `${displayFreq.toFixed(1)} Hz`,
-            middleX + 10,
-            currentY
-          );
+          // Draw frequency value
+          ctx.fillStyle = currentColor;
+          ctx.font = "bold 16px Arial";
+          ctx.textAlign = "left";
+          
+          // Position text to the right of the middle line
+          const textX = middleX + 15;
+          ctx.fillText(`${displayFreq.toFixed(1)} Hz`, textX, currentY + 5);
         }
       }
     }
@@ -645,6 +626,20 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
         startTimeRef.current = Date.now();
       }
       lastPlayedNoteRef.current = null;
+
+      // Initialize scroll position to show middle range notes
+      if (scrollOffsetRef.current === 0 && targetScrollOffsetRef.current === 0) {
+        const pixelsPerNote = 40;
+        const totalHeight = displayNotes.length * pixelsPerNote;
+        const canvas = canvasRef.current;
+        if (canvas) {
+          // Center the view on the middle of all notes
+          const centerY = canvas.height / 2;
+          const middleNoteY = totalHeight / 2;
+          targetScrollOffsetRef.current = centerY - middleNoteY;
+          scrollOffsetRef.current = targetScrollOffsetRef.current;
+        }
+      }
 
       // Start animation if not already running
       if (!animationRef.current) {
@@ -669,6 +664,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       dataCompressionCounter.current = 0;
       lastStoredFrequency.current = 0;
       renderCache.current = { lastUpdate: 0 };
+      scrollOffsetRef.current = 0;
+      targetScrollOffsetRef.current = 0;
     }
 
     return () => {
@@ -731,6 +728,8 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({
       dataCompressionCounter.current = 0;
       lastStoredFrequency.current = 0;
       renderCache.current = { lastUpdate: 0 };
+      scrollOffsetRef.current = 0;
+      targetScrollOffsetRef.current = 0;
 
       // Clear the canvas
       const canvas = canvasRef.current;
